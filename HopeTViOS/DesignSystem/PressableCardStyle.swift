@@ -23,10 +23,10 @@ struct ActionButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
             .lineLimit(1)
-            .foregroundStyle(prominent ? Color.black : theme.textPrimary)
+            .foregroundStyle(prominent ? theme.background : theme.textPrimary)
             .padding(.horizontal, 18)
             .frame(minHeight: 44)
-            .background(prominent ? Color.white.opacity(0.9) : theme.surfaceSelected, in: Capsule())
+            .background(prominent ? theme.textPrimary.opacity(0.9) : theme.surfaceSelected, in: Capsule())
             .contentShape(Capsule())
             .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.5)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)

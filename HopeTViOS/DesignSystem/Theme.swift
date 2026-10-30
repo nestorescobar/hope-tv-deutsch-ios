@@ -17,6 +17,8 @@ struct AppTheme: Equatable {
     var surfaceSelectedToken: Color?
     var textPrimaryToken: Color?
     var textSecondaryToken: Color?
+    /// Read here, not in `PresetTokens`: only the phone's LIVE badge draws it.
+    var dangerToken: Color?
     var headingFont: String?
     var bodyFont: String?
 
@@ -28,6 +30,7 @@ struct AppTheme: Equatable {
         static let surfaceSelected = Color(hex: "#232B3A") ?? .gray
         static let textPrimary = Color.white
         static let textSecondary = Color(hex: "#9AA4B8") ?? .gray
+        static let danger = Color.red
     }
 
     /// Nothing resolved: every accessor answers `Floor`. It is the environment default and
@@ -37,7 +40,9 @@ struct AppTheme: Equatable {
     init() {}
 
     init(preset: JSONValue) {
-        self.init(tokens: PresetTokens(preset: preset))
+        let tokens = PresetTokens(preset: preset)
+        self.init(tokens: tokens)
+        dangerToken = Color(hex: preset["colors"][tokens.semanticToKey["danger"] ?? "danger"]["500"].string)
     }
 
     init(tokens: PresetTokens) {
@@ -64,6 +69,7 @@ struct AppTheme: Equatable {
     var surfaceSelected: Color { surfaceSelectedToken ?? Floor.surfaceSelected }
     var textPrimary: Color { textPrimaryToken ?? Floor.textPrimary }
     var textSecondary: Color { textSecondaryToken ?? Floor.textSecondary }
+    var danger: Color { dangerToken ?? Floor.danger }
 }
 
 private struct AppThemeKey: EnvironmentKey {

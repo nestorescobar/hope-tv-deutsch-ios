@@ -1734,13 +1734,13 @@ private struct LiveCardView: View {
             router.play(model.request)
         } label: {
             // 16:9, as wide as the column. The art fills an overlay, so it never sizes the card.
-            Color.black
+            theme.background
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .frame(maxWidth: .infinity)
                 .overlay {
                     if let onAir {
                         RemoteImage(url: onAir.imageURL, blurhash: onAir.blurhash)
-                        LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .center, endPoint: .bottom)
+                        LinearGradient(colors: [.clear, theme.background.opacity(0.8)], startPoint: .center, endPoint: .bottom)
                     }
                 }
                 .clipped()
@@ -1763,9 +1763,9 @@ private struct LiveCardView: View {
     private var playGlyph: some View {
         Image(systemName: "play.fill")
             .font(.system(size: 26, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(theme.textPrimary)
             .frame(width: 64, height: 64)
-            .background(.black.opacity(0.55), in: Circle())
+            .background(theme.background.opacity(0.55), in: Circle())
     }
 
     /// "Now", then the broadcast title and its show, as the on-air schedule row says them.
@@ -1776,11 +1776,11 @@ private struct LiveCardView: View {
                 .foregroundStyle(theme.accent)
             Text(entry.title)
                 .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.textPrimary)
             if let show = entry.showTitle {
                 Text(show)
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(theme.textPrimary.opacity(0.8))
             }
         }
         .lineLimit(1)

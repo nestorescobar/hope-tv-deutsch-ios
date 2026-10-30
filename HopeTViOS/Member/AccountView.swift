@@ -1,4 +1,3 @@
-import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 /// The Account tab (awe#6563): "Sign in" when signed out, the member name and "Sign out" when
@@ -196,49 +195,41 @@ struct SignInView: View {
     }
 }
 
-/// The Sign-in code, the address to type, and the QR of `verificationUriComplete`. Close leaves the
-/// screen: a phone has no Back button under a cover.
+/// The approval link, then the code and the address for another device. tvOS draws a QR here, but
+/// a phone cannot scan its own screen: the link opens `verificationUriComplete`, which holds the
+/// code, in the browser. `SignInFlow` keeps polling, so the viewer returns to a signed-in app.
+/// Close leaves the screen: a phone has no Back button under a cover.
 private struct CodePanel: View {
     let grant: SignInGrant
 
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .center, spacing: 28) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(ChromeText.string(.signIn))
-                    .font(.system(size: Layout.text(52), weight: .bold))
-                    .foregroundStyle(theme.textPrimary)
-                Text(ChromeText.string(.signInVisit, ["url": typedAddress]))
-                    .font(.system(size: Layout.text(32)))
-                    .foregroundStyle(theme.textPrimary)
-                Text(grant.signInCode)
-                    .font(.system(size: 44, weight: .bold, design: .monospaced))
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                    .tracking(2)
-                    .foregroundStyle(theme.textPrimary)
-                    .accessibilityIdentifier("sign-in-code")
-                Text(ChromeText.string(.signInScan))
+        VStack(alignment: .leading, spacing: 14) {
+            Text(ChromeText.string(.signIn))
+                .font(.system(size: Layout.text(52), weight: .bold))
+                .foregroundStyle(theme.textPrimary)
+            // `MemberClient` refuses a grant whose URIs are not https.
+            Link(destination: grant.verificationURIComplete) {
+                Label(ChromeText.string(.signIn), systemImage: "safari")
+            }
+            .buttonStyle(ActionButtonStyle(prominent: true))
+            .accessibilityIdentifier("sign-in-link")
+            Text(ChromeText.string(.signInVisit, ["url": typedAddress]))
+                .font(.system(size: Layout.text(32)))
+                .foregroundStyle(theme.textSecondary)
+            Text(grant.signInCode)
+                .font(.system(size: 44, weight: .bold, design: .monospaced))
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                .tracking(2)
+                .foregroundStyle(theme.textPrimary)
+                .accessibilityIdentifier("sign-in-code")
+            HStack(spacing: 20) {
+                ProgressView()
+                Text(ChromeText.string(.signInWaiting))
                     .font(.system(size: Layout.text(28)))
                     .foregroundStyle(theme.textSecondary)
-                HStack(spacing: 20) {
-                    ProgressView()
-                    Text(ChromeText.string(.signInWaiting))
-                        .font(.system(size: Layout.text(28)))
-                        .foregroundStyle(theme.textSecondary)
-                }
-            }
-
-            if let qr = SignInQRCode.image(for: grant.verificationURIComplete.absoluteString) {
-                Image(decorative: qr, scale: 1)
-                    .interpolation(.none)
-                    .resizable()
-                    .frame(width: 200, height: 200)
-                    // A light quiet zone, so a phone reads it on a dark theme.
-                    .padding(14)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
-                    .accessibilityIdentifier("sign-in-qr")
             }
         }
     }
@@ -247,17 +238,5 @@ private struct CodePanel: View {
     private var typedAddress: String {
         let text = grant.verificationURI.absoluteString
         return text.hasPrefix("https://") ? String(text.dropFirst("https://".count)) : text
-    }
-}
-
-/// The QR of the approval URL: Core Image, error correction M. The view scales it with no
-/// interpolation, so the modules stay sharp.
-enum SignInQRCode {
-    static func image(for text: String) -> CGImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        filter.correctionLevel = "M"
-        guard let output = filter.outputImage else { return nil }
-        return CIContext().createCGImage(output, from: output.extent)
     }
 }

@@ -897,16 +897,9 @@ final class MemberAccountTests: XCTestCase {
     }
 }
 
-// MARK: - QR and strings
+// MARK: - Strings
 
 final class SignInScreenTests: XCTestCase {
-
-    func testTheQRCodeIsASquareImage() throws {
-        let image = try XCTUnwrap(SignInQRCode.image(for: "https://hope.test/activate#code=BCDFGHJK"))
-
-        XCTAssertEqual(image.width, image.height)
-        XCTAssertGreaterThanOrEqual(image.width, 21, "at least a version 1 symbol")
-    }
 
     func testTheSignedInNameFillsThePlaceholder() {
         ChromeText.served.strings = [:]

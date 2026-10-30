@@ -249,3 +249,14 @@ final class SemanticColorsTests: XCTestCase {
         XCTAssertEqual(PresetTokens(preset: preset).accent, "#555555")
     }
 }
+
+final class ThemeDangerTests: XCTestCase {
+    func testDangerReadsThePresetRamp() {
+        let preset = JSONValue.object(["colors": .object(["danger": .object(["500": .string("#ef4444")])])])
+        XCTAssertEqual(AppTheme(preset: preset).danger, Color(hex: "#ef4444"))
+    }
+
+    func testNoRampFallsBackToTheFloor() {
+        XCTAssertEqual(AppTheme.fallback.danger, AppTheme.Floor.danger)
+    }
+}

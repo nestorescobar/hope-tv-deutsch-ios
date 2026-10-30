@@ -159,14 +159,16 @@ private struct CardCaption: View {
 private struct BadgeView: View {
     let text: String?
 
+    @Environment(\.appTheme) private var theme
+
     var body: some View {
         if let text {
             Text(text)
                 .font(.system(size: 11, weight: .bold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(text == "LIVE" ? Color.red : Color.black.opacity(0.65))
-                .foregroundStyle(.white)
+                .background(text == "LIVE" ? theme.danger : theme.background.opacity(0.65))
+                .foregroundStyle(theme.textPrimary)
                 .clipShape(Capsule())
                 .padding(6)
         }
@@ -176,12 +178,14 @@ private struct BadgeView: View {
 private struct ProgressStrip: View {
     let progress: Double?
 
+    @Environment(\.appTheme) private var theme
+
     var body: some View {
         if let progress {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Rectangle().fill(.white.opacity(0.25))
-                    Rectangle().fill(.white).frame(width: geometry.size.width * progress)
+                    Rectangle().fill(theme.textPrimary.opacity(0.25))
+                    Rectangle().fill(theme.accent).frame(width: geometry.size.width * progress)
                 }
             }
             .frame(height: 3)

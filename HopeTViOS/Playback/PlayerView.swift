@@ -179,7 +179,7 @@ struct PlayerView: View {
     private func glyph(_ symbol: String) -> some View {
         Image(systemName: symbol)
             .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(theme.textPrimary)
             .frame(width: 44, height: 44)
     }
 

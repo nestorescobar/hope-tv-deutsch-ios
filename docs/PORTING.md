@@ -161,6 +161,13 @@ the sections above, and why.
 - **YouTube** plays in an iframe (`YouTubeEmbed`) on the Episode and Movie Screens, only when no
   native source resolves. ContractKit still answers "can't play", because tvOS has no web view.
   YouTube owns that player: no resume, no Keep watching, no Up Next, no Watch later toggle.
+- **Sign-in has no QR.** A phone cannot scan its own screen, so the code screen links to
+  `verificationUriComplete`. The code and the address stay for a second device. The device-code
+  flow itself is unchanged, and the contract's `signInScan` string is not drawn.
+- **Colors come from the preset.** Every color a view draws reads `AppTheme`. `danger` is the one
+  token the phone adds, read in `AppTheme(preset:)`. Two stay fixed on purpose: black around
+  video and the YouTube frame, and the shadow under the tab bar. `LaunchBackground` and
+  `AccentColor` are build-time assets, because they draw before a manifest loads.
 - **Launch image.** The launch screen shows the app icon on `LaunchBackground`. Both shells use
   the same icon and the same launch image.
 - **Not done:** Dynamic Type (Phase 4) and the hero preview loop on a device.
