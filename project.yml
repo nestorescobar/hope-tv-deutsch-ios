@@ -37,6 +37,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:
           UIColorName: LaunchBackground
+          UIImageName: LaunchLogo
         # Audio goes on with the screen locked, and Picture in Picture works.
         UIBackgroundModes: [audio]
         UIStatusBarStyle: UIStatusBarStyleLightContent
