@@ -1,0 +1,129 @@
+{
+  "manifest": {
+    "contractVersion": 1,
+    "appDesign": "tv",
+    "entryScreenId": null,
+    "defaultLayoutId": "6aa952fdc445860ea24e1be2",
+    "tabs": [
+      "Home",
+      "Browse",
+      "Live"
+    ]
+  },
+  "screens": {
+    "home": {
+      "id": "6aa952fbc445860ea24e1bc1",
+      "kind": "static",
+      "render": [
+        "Root",
+        "Section",
+        "Container",
+        "CollectionTeaser",
+        "ScheduleLive",
+        "Collection",
+        "SimpleText"
+      ],
+      "renderNull": [],
+      "resources": {
+        "hero.collectionTeaser.shows": 6,
+        "latest.collection.episodes": 24,
+        "liveStrip.channel.hls": "present",
+        "liveStrip.broadcastsLive.items": 3,
+        "liveStrip.channel.vimeo": null,
+        "hero.collectionTeaser.channel": null,
+        "latest.collection.channel": null,
+        "latest.collection.layout": "posters"
+      },
+      "firstCardTitle": "Table Talk",
+      "clientOwned": [
+        "EpisodeWatchHistory"
+      ]
+    },
+    "browse": {
+      "id": "6aa952fcc445860ea24e1bcc",
+      "kind": "static",
+      "render": [
+        "Root",
+        "Section",
+        "Container",
+        "SimpleText",
+        "ShowList",
+        "Button"
+      ],
+      "renderNull": [],
+      "resources": {
+        "grid.shows.items": 35,
+        "grid.shows.count": 39
+      },
+      "buttonLink": {
+        "linkType": "screen",
+        "screen": "6aa952fbc445860ea24e1bb6",
+        "screenParam": "61975e24d9c698836400305c"
+      }
+    },
+    "live": {
+      "id": "6aa952fcc445860ea24e1bd7",
+      "kind": "static",
+      "render": [
+        "Root",
+        "Section",
+        "Container",
+        "LivestreamPlayer",
+        "ScheduleLive"
+      ],
+      "renderNull": [],
+      "resources": {
+        "player.channel.hls": "present",
+        "schedule.broadcastsLive.items": 6,
+        "player.channel.vimeo": null,
+        "player.channel.jetstream": null
+      }
+    },
+    "show": {
+      "id": "6aa952fbc445860ea24e1bb6",
+      "kind": "template",
+      "resourceType": "show",
+      "param": "61975e24d9c698836400305c",
+      "render": [
+        "Root",
+        "Section",
+        "Container",
+        "ShowDetail",
+        "EpisodesList"
+      ],
+      "renderNull": [],
+      "resources": {
+        "detail.showDetail.title": "Celebration of Hope",
+        "episodes.episodes.items": 8,
+        "episodes.episodes.count": 24,
+        "detail.showDetail.subtitle": ""
+      }
+    },
+    "episode": {
+      "id": "6ab3c22ade87f6e74b7dc8f7",
+      "kind": "template",
+      "resourceType": "episode",
+      "param": "629ecd4ce1e081635d11107e",
+      "render": [
+        "Root",
+        "Section",
+        "Container",
+        "EpisodePlayer",
+        "EpisodeDetail"
+      ],
+      "renderNull": [],
+      "resources": {
+        "nnnTOtbL5k.episodePlayer.provider": "jetstream",
+        "nnnTOtbL5k.episodePlayer.id": "jsv:mmPNfkcIEdR",
+        "nnnTOtbL5k.episodePlayer.poster": "present",
+        "nnnTOtbL5k.episodePlayer.mediaLinks.jetstream.link": "jsv:mmPNfkcIEdR",
+        "nnnTOtbL5k.episodePlayer.playlist": 3,
+        "nnnTOtbL5k.episodePlayer.playlistIndex": 0,
+        "nnnTOtbL5k.episodePlayer.autoplayEpisodes": false,
+        "4SQMb_-iqc.episodeDetail.title": "Lesson 1: Suffering With the Good Shepherd",
+        "4SQMb_-iqc.episodeDetail.show.title": "Hope Sabbath School"
+      }
+    }
+  },
+  "notes": "Hand-edited 2026-10-19, not captured: episode.json's top-level episodePlayer gains mediaLinks { jetstream: { link: jsv:mmPNfkcIEdR } }, the link-only map the App path now serves as the renderer fallback source. It was added ahead of the next capture.sh run; re-check the pin then. Earlier: hand-edited 2026-10-10 for awe#6548, not captured: episode.json's episodePlayer gains the App playlist shape (3 items of { id, title, poster, provider, mediaLinks }, link-only mediaLinks, no url), playlistIndex 0 and autoplayEpisodes false. Items 2 and 3 are made up (Lesson 3 is a YouTube item, which tvOS cannot play). The next capture.sh run replaces them with staging values; re-check these pins then. Earlier: re-captured again 2026-09-23 for awe#4950, after the owner changed the Episode Screen: the owner added EpisodeDetail (node 4SQMb_-iqc, after EpisodePlayer) and cleared latest.props.showScreenId, so the nested latest episodes[].show carry no screenLink (the episode links stay). Staging now has an EPG: liveStrip serves 3 broadcastsLive items and schedule 6, count 232, rows without episode or screenLink. The broadcast pins are time-bound: the EPG changes by the hour, so any re-capture moves them. manifest gains chrome.strings.updateRequiredRetry. show.json unchanged. Earlier: re-captured 2026-09-23 for awe#4950 (browse.json came back byte-identical): the App gains the Episode Template Screen 6ab3c22ade87f6e74b7dc8f7 (resourceType episode; Root → Section → Container → EpisodePlayer). episodeScreenId is set on the Home latest Collection, both ScheduleLive blocks (Home liveStrip, Live schedule) and the Show EpisodesList; showScreenId is set on the Home hero CollectionTeaser and the latest Collection. The hero cards now carry screenLink too, so no fixture card is served without a link: the no-link convention fallback is proven only by the synthetic tvOS ServedScreenLinkTests. live serves no broadcast, so it carries no link. episode.json is captured with a Jetstream episode (param 629ecd4ce1e081635d11107e, the 2nd Home latest card): episodePlayer names the media id jsv:mmPNfkcIEdR, not a url, and the renderer derives the HLS manifest. capture.sh redacted 0 values. Earlier: browse re-captured 2026-09-23 for awe#4679: the Browse ShowList block now names its Show screen (props.showScreenId = 6aa952fbc445860ea24e1bb6), so every grid.shows.items[] card carries screenLink { linkType: screen, screen: <Show template>, screenParam: <show id> } — the 'card with a link' the renderer suites assert (tvOS FixtureScreenLinkTests in CardRoutingTests.swift). At that capture the Home hero collectionTeaser cards stayed WITHOUT screenLink on purpose, as the 'card without a link' that fell back to the resourceType convention (true until awe#4950). No other file changed. Earlier: re-captured 2026-09-22 from staging after awe#4690 (PR #4739) deployed, with the awe#4520 test edits settled: the Browse tab label is back to Browse and the Home hero keeps the carousel the owner chose. Changes versus 2026-09-21: manifest gains four chrome strings (updateRequiredTitle/Message/Action, notificationsRegistrationLabel); the Home hero block's own props.layout is carousel (a mobile/web layout mode — the tvOS shelf style still resolves from the Collection record's banner, so the shelf pins are unchanged); browse serves an explicit resourceType null (the decoder already treated a missing value as null). No served shape changed for the gated media-library resources. Earlier: captured 2026-09-21 from staging. home re-captured after awe#4680/awe#4681 (PR #4692) deployed: the collection and collectionTeaser resources carry only PUBLIC_COLLECTION_FIELDS (the null pins on channel and the layout pin cover it). Earlier re-captures: home and live after awe#4663 (PR #4687, channel resource allowlist — capture.sh redacted 0 values); browse and show after awe#4682 (PR #4684 — showDetail.subtitle, empty on staging; every show carries images.poster and images.banner beside images.default, 2 of 35 Browse shows have banner art, none has poster art). manifest unchanged since slice 1. broadcastsLive is empty because the staging channel has no EPG. EpisodesList reaches the renderers with the first page of episodes inlined. clientOwned keys have no server resource: a renderer may render null OR an empty state; both satisfy the fixture."
+}

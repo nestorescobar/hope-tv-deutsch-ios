@@ -1,0 +1,5 @@
+# The awe commit that ContractKit/ and fixtures/ were copied from. Written by scripts/sync-from-awe.sh.
+repository: https://github.com/hope-media/awe
+path: apps/tv/tvos/HopeTV
+commit: 87ac4be893682c64775844d1c7ac4503e0db1e21
+date: 2026-10-30T09:54:43+02:00

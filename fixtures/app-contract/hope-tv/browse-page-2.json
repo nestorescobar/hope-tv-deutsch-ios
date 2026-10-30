@@ -1,0 +1,124 @@
+{
+  "nodeId": "grid",
+  "page": 2,
+  "hasMore": false,
+  "resources": {
+    "shows": {
+      "items": [
+        {
+          "_id": "6a0000000000000000000201",
+          "slug": "zeitfragen",
+          "title": "Zeitfragen",
+          "abstract": "",
+          "images": {
+            "default": {
+              "name": "page2-1.jpg",
+              "containerId": "602bd46f36432128d40d5e81",
+              "extension": ".jpg",
+              "mime": "image/jpeg",
+              "size": 40000,
+              "originalFilename": "page2_1",
+              "width": 720,
+              "height": 405,
+              "blurhash": "L9C$cF$_E159E30ixa^$0M~A^%fh"
+            },
+            "banner": null,
+            "poster": null
+          },
+          "episodeCount": 12,
+          "publishedAt": "2023-01-01T10:00:00.000Z",
+          "screenLink": {
+            "linkType": "screen",
+            "screen": "6aa952fbc445860ea24e1bb6",
+            "screenParam": "6a0000000000000000000201"
+          }
+        },
+        {
+          "_id": "6a0000000000000000000202",
+          "slug": "zwischen-den-zeilen",
+          "title": "Zwischen den Zeilen",
+          "abstract": "",
+          "images": {
+            "default": {
+              "name": "page2-2.jpg",
+              "containerId": "602bd46f36432128d40d5e81",
+              "extension": ".jpg",
+              "mime": "image/jpeg",
+              "size": 40000,
+              "originalFilename": "page2_2",
+              "width": 720,
+              "height": 405,
+              "blurhash": "L9C$cF$_E159E30ixa^$0M~A^%fh"
+            },
+            "banner": null,
+            "poster": null
+          },
+          "episodeCount": 40,
+          "publishedAt": "2023-01-02T10:00:00.000Z",
+          "screenLink": {
+            "linkType": "screen",
+            "screen": "6aa952fbc445860ea24e1bb6",
+            "screenParam": "6a0000000000000000000202"
+          }
+        },
+        {
+          "_id": "6a0000000000000000000203",
+          "slug": "zukunft-leben",
+          "title": "Zukunft leben",
+          "abstract": "",
+          "images": {
+            "default": {
+              "name": "page2-3.jpg",
+              "containerId": "602bd46f36432128d40d5e81",
+              "extension": ".jpg",
+              "mime": "image/jpeg",
+              "size": 40000,
+              "originalFilename": "page2_3",
+              "width": 720,
+              "height": 405,
+              "blurhash": "L9C$cF$_E159E30ixa^$0M~A^%fh"
+            },
+            "banner": null,
+            "poster": null
+          },
+          "episodeCount": 8,
+          "publishedAt": "2023-01-03T10:00:00.000Z",
+          "screenLink": {
+            "linkType": "screen",
+            "screen": "6aa952fbc445860ea24e1bb6",
+            "screenParam": "6a0000000000000000000203"
+          }
+        },
+        {
+          "_id": "6a0000000000000000000204",
+          "slug": "zuhause-bei-gott",
+          "title": "Zuhause bei Gott",
+          "abstract": "",
+          "images": {
+            "default": {
+              "name": "page2-4.jpg",
+              "containerId": "602bd46f36432128d40d5e81",
+              "extension": ".jpg",
+              "mime": "image/jpeg",
+              "size": 40000,
+              "originalFilename": "page2_4",
+              "width": 720,
+              "height": 405,
+              "blurhash": "L9C$cF$_E159E30ixa^$0M~A^%fh"
+            },
+            "banner": null,
+            "poster": null
+          },
+          "episodeCount": 21,
+          "publishedAt": "2023-01-04T10:00:00.000Z",
+          "screenLink": {
+            "linkType": "screen",
+            "screen": "6aa952fbc445860ea24e1bb6",
+            "screenParam": "6a0000000000000000000204"
+          }
+        }
+      ],
+      "count": 39
+    }
+  }
+}
