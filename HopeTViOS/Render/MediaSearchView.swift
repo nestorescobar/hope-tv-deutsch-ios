@@ -152,10 +152,9 @@ struct MediaSearchView: View {
             .scrollClipDisabled()
             .scrollDismissesKeyboard(.immediately)
         }
-        // A search screen has no outer scroll view, so this takes the screen's visible height.
-        .containerRelativeFrame(.vertical) { length, _ in
-            max(length - 2 * Layout.screenTopPadding, 0)
-        }
+        // A search screen has no outer scroll view, so this takes the height the tab offers.
+        // `containerRelativeFrame` would measure the window: `LayoutTabs` is no `TabView`.
+        .frame(maxHeight: .infinity, alignment: .top)
         .onChange(of: text) { _, text in
             session.update(text, search: run)
         }

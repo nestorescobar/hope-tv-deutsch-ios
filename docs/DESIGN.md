@@ -28,7 +28,9 @@ The launch background color is `#0E151A` (`LaunchBackground` in the asset catalo
   an `accent` rounded pill with a dark icon. Five tabs on the website: Home, Live (TV icon),
   Suche, Downloads (cloud icon), Verlauf (history icon). The app shows the tabs the CMS layout
   lists, in its order.
-- **No top bar on Home.** The hero runs under the status bar. Light status bar content.
+- **No top bar on Home.** The hero starts below the status bar. A solid band in the theme
+  background sits behind the status bar on every screen, so the notch and the Dynamic Island cut
+  no art or text. Its height comes from the safe area. Light status bar content.
 - **Screen titles** ("Suche", "Downloads", "Verlauf"): large, bold, left-aligned, about 28 pt.
 - **Shelf headings:** uppercase, wide letter spacing, about 17 pt, a yellow `>` at the right
   when the shelf links to a list.

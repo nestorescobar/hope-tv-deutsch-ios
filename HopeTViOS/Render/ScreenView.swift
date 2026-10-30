@@ -897,6 +897,7 @@ private struct HeroShelfView: View {
     @Environment(\.leadingHero) private var leadingHero
     @Environment(SavedItemList.self) private var watchLater
     @Environment(\.stackEntry) private var stackEntry
+    @Environment(ContractStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var index = 0
@@ -911,7 +912,8 @@ private struct HeroShelfView: View {
 
     /// Restarts the auto-advance wait. A page change (manual or automatic) starts a full wait.
     /// The full-screen player covers this view without removing it, so the wait stops while it
-    /// plays. A pushed screen or another tab removes the view, which cancels the wait.
+    /// plays. A pushed screen removes the view, which cancels the wait. A tab out of view keeps it,
+    /// so `onShow` stops the wait there.
     private struct AutoAdvance: Equatable {
         let index: Int
         let playing: Bool
@@ -922,6 +924,8 @@ private struct HeroShelfView: View {
     private var columnWidth: CGFloat { stageWidth - 2 * Layout.screenMargin }
 
     private var card: CardModel { model.cards[min(index, model.cards.count - 1)] }
+    /// This hero's screen is the one on show: not a tab out of view, not under a pushed screen.
+    private var onShow: Bool { stackEntry.map { router.state.current == $0 } ?? true }
 
     var body: some View {
         let card = card
@@ -929,8 +933,11 @@ private struct HeroShelfView: View {
         let leads = leadingHero?.nodeId == model.nodeId
         let bleed = leads ? leadingHero?.bleed ?? 0 : 0
         let shift = leads ? leadingHero?.shift ?? 0 : 0
+        // Mobile art centers the person, so the text would cover them: the logo and one button
+        // draw centered under the face. The rest is on the show screen.
+        let centered = mobileBanner(for: card) != nil
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: centered ? .center : .leading, spacing: 10) {
             // Only an authored title draws, as a quiet overline above the logo.
             if let title = model.title {
                 Text(title)
@@ -939,39 +946,8 @@ private struct HeroShelfView: View {
                     .lineLimit(1)
             }
             identity(card: card, hero: hero)
-            if let hero, hero.metaBeforeAbstract, !hero.metaParts.isEmpty {
-                HeroMetaLine(parts: hero.metaParts)
-            }
-            if let abstract = hero?.abstract {
-                Text(abstract)
-                    .font(.system(size: 14))
-                    .foregroundStyle(theme.textPrimary.opacity(0.9))
-                    .lineLimit(2)
-            }
-            if let hero, !hero.metaBeforeAbstract, !hero.metaParts.isEmpty {
-                HeroMetaLine(parts: hero.metaParts)
-            }
-            if let categories = hero?.categories, !categories.isEmpty, let separator = hero?.tagSeparator {
-                // `MovieHero` with `genresDisplay: "text"`: one line in the meta style, not chips.
-                Text(categories.joined(separator: separator))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(theme.textSecondary)
-                    .lineLimit(1)
-            } else if let categories = hero?.categories, !categories.isEmpty {
-                OneLineRow(spacing: 8) {
-                    ForEach(categories, id: \.self) { category in
-                        Text(category)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(theme.textPrimary)
-                            .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 3)
-                            .overlay(Capsule().strokeBorder(theme.textPrimary.opacity(0.6), lineWidth: 1))
-                            .fixedSize()
-                    }
-                }
-                .frame(width: columnWidth, alignment: .leading)
-                .clipped()
+            if !centered {
+                details(hero)
             }
             if let hero, let message = hero.cannotPlayMessage {
                 Text(message)
@@ -980,14 +956,19 @@ private struct HeroShelfView: View {
                     .accessibilityIdentifier("cannot-play")
             }
             if let hero, hero.hasActions {
-                actions(card: card, hero: hero)
+                if centered {
+                    watchNow(card: card, hero: hero)
+                        .padding(.top, 10)
+                } else {
+                    actions(card: card, hero: hero)
+                }
             }
             if model.cards.count > 1 {
                 PageDots(count: model.cards.count, index: index)
                     .frame(maxWidth: .infinity)
             }
         }
-        .frame(width: columnWidth, alignment: .leading)
+        .frame(width: columnWidth, alignment: centered ? .center : .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: height, alignment: .bottomLeading)
         .background(alignment: .top) {
@@ -1001,8 +982,8 @@ private struct HeroShelfView: View {
             guard abs(drag.translation.width) > max(abs(drag.translation.height), 40) else { return }
             page(drag.translation.width < 0 ? 1 : -1)
         })
-        .task(id: AutoAdvance(index: index, playing: router.playback != nil)) {
-            guard model.cards.count > 1, router.playback == nil else { return }
+        .task(id: AutoAdvance(index: index, playing: router.playback != nil || !onShow)) {
+            guard model.cards.count > 1, router.playback == nil, onShow else { return }
             guard (try? await Task.sleep(for: Self.autoAdvanceInterval)) != nil else { return }
             page(1)
         }
@@ -1011,9 +992,59 @@ private struct HeroShelfView: View {
         .onScrollVisibilityChange(threshold: 0.5) { inView = $0 }
     }
 
+    /// The abstract, the meta line and the categories, in the order the block serves them.
+    @ViewBuilder
+    private func details(_ hero: HeroModel?) -> some View {
+        if let hero, hero.metaBeforeAbstract, !hero.metaParts.isEmpty {
+            HeroMetaLine(parts: hero.metaParts)
+        }
+        if let abstract = hero?.abstract {
+            Text(abstract)
+                .font(.system(size: 14))
+                .foregroundStyle(theme.textPrimary.opacity(0.9))
+                .lineLimit(2)
+        }
+        if let hero, !hero.metaBeforeAbstract, !hero.metaParts.isEmpty {
+            HeroMetaLine(parts: hero.metaParts)
+        }
+                if let categories = hero?.categories, !categories.isEmpty, let separator = hero?.tagSeparator {
+            // `MovieHero` with `genresDisplay: "text"`: one line in the meta style, not chips.
+            Text(categories.joined(separator: separator))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(theme.textSecondary)
+                .lineLimit(1)
+        } else if let categories = hero?.categories, !categories.isEmpty {
+            OneLineRow(spacing: 8) {
+                ForEach(categories, id: \.self) { category in
+                    Text(category)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(theme.textPrimary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .overlay(Capsule().strokeBorder(theme.textPrimary.opacity(0.6), lineWidth: 1))
+                        .fixedSize()
+                }
+            }
+            .frame(width: columnWidth, alignment: .leading)
+            .clipped()
+        }
+    }
+
+    /// The item's `images.bannerMobile`, read from the screen's raw resource: `BlockRegistry` picks
+    /// the TV `banner` and the card keeps only that URL. nil keeps the card's art.
+    private func mobileBanner(for card: CardModel) -> (url: URL, blurhash: String?)? {
+        guard let stackEntry else { return nil }
+        let key = store.key(for: stackEntry.screenId, param: stackEntry.param)
+        let resources = store.blockResources(for: key)[model.nodeId] ?? [:]
+        guard let file = MobileBanner.file(recordId: card.id, in: .object(resources)),
+              let url = ImageConfig(cdn: store.config.imagesCDN, bucket: store.config.imagesBucket)
+                  .url(file, width: MobileBanner.artWidth) else { return nil }
+        return (url, file.blurhash)
+    }
+
     /// The preview gate for the item on show.
     private func previewGate(_ hero: HeroModel?) -> HeroPreview.Gate {
-        let onShow = stackEntry.map { router.state.current == $0 } ?? true
         return HeroPreview.Gate(hasSource: hero?.previewURL != nil, reduceMotion: reduceMotion,
                                 playbackOpen: router.playback != nil, onScreen: appeared && onShow && inView,
                                 sceneActive: scenePhase == .active)
@@ -1031,6 +1062,7 @@ private struct HeroShelfView: View {
                 .font(theme.headingFont.map { .custom($0, size: 30) } ?? .system(size: 30, weight: .bold))
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(2)
+                .multilineTextAlignment(.center)
         }
     }
 
@@ -1043,21 +1075,26 @@ private struct HeroShelfView: View {
             : CGSize(width: box.height / aspect, height: box.height)
     }
 
+    @ViewBuilder
+    private func watchNow(card: CardModel, hero: HeroModel) -> some View {
+        if let watchNow = hero.watchNow {
+            Button {
+                switch watchNow {
+                case .select: router.select(card.target)
+                case let .play(request, _): router.play(request)
+                }
+            } label: {
+                Label(watchNow.label, systemImage: "play.fill")
+            }
+            .buttonStyle(ActionButtonStyle(prominent: true))
+            .modifier(SelectionCue(target: card.target))
+            .accessibilityIdentifier("watch-now")
+        }
+    }
+
     private func actions(card: CardModel, hero: HeroModel) -> some View {
         ActionRow {
-            if let watchNow = hero.watchNow {
-                Button {
-                    switch watchNow {
-                    case .select: router.select(card.target)
-                    case let .play(request, _): router.play(request)
-                    }
-                } label: {
-                    Label(watchNow.label, systemImage: "play.fill")
-                }
-                .buttonStyle(ActionButtonStyle(prominent: true))
-                .modifier(SelectionCue(target: card.target))
-                .accessibilityIdentifier("watch-now")
-            }
+            watchNow(card: card, hero: hero)
 
             if let trailer = hero.trailer {
                 Button {
@@ -1083,16 +1120,16 @@ private struct HeroShelfView: View {
 
     private func art(card: CardModel, height: CGFloat) -> some View {
         ZStack {
-            HeroArt(card: card, width: stageWidth, height: height, fillsFromTop: true)
+            HeroArt(card: card, width: stageWidth, height: height, fillsFromTop: true, art: mobileBanner(for: card))
                 .id(card.id)
                 .transition(.opacity)
             let gate = previewGate(card.hero)
             HeroPreviewVideo(index: index, key: card.id, url: gate.mayPlay ? card.hero?.previewURL : nil,
                              hold: gate.hold)
-            // The top stays dark for the status bar; the bottom fades into the next shelf.
+            // The top meets the status bar band; the bottom fades into the next shelf.
             LinearGradient(stops: [
-                .init(color: theme.background.opacity(0.45), location: 0),
-                .init(color: theme.background.opacity(0), location: 0.2),
+                .init(color: theme.background, location: 0),
+                .init(color: theme.background.opacity(0), location: 0.12),
                 .init(color: theme.background.opacity(0), location: 0.4),
                 .init(color: theme.background.opacity(0.75), location: 0.72),
                 .init(color: theme.background, location: 1),
@@ -1597,13 +1634,31 @@ private struct PlayActionView: View {
     let model: PlayActionModel
 
     @Environment(AppRouter.self) private var router
+    @Environment(ContractStore.self) private var store
+    @Environment(\.stackEntry) private var stackEntry
     @Environment(\.appTheme) private var theme
+
+    /// A YouTube id, only when no native source plays: ContractKit answers "can't play" for
+    /// YouTube, because tvOS has no web view. The source order stays the contract's.
+    private var youTubeId: String? {
+        guard model.request == nil, let stackEntry else { return nil }
+        let key = store.key(for: stackEntry.screenId, param: stackEntry.param)
+        let resources = store.blockResources(for: key)[model.nodeId]
+        return (resources?["episodePlayer"] ?? resources?["moviePlayer"]).flatMap(YouTubeEmbed.videoId)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            DetailImage(url: model.posterURL, blurhash: nil)
+            if let youTubeId {
+                YouTubeEmbedView(videoId: youTubeId)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("youtube-embed")
+            } else {
+                DetailImage(url: model.posterURL, blurhash: nil)
+            }
 
-            if let request = model.request {
+            if youTubeId == nil, let request = model.request {
                 Button {
                     router.play(request)
                 } label: {
@@ -1611,7 +1666,7 @@ private struct PlayActionView: View {
                 }
                 .buttonStyle(ActionButtonStyle(prominent: true))
                 .accessibilityIdentifier("play-action")
-            } else if let message = model.message {
+            } else if youTubeId == nil, let message = model.message {
                 Text(message)
                     .font(.system(size: Layout.text(26)))
                     .foregroundStyle(theme.textSecondary)

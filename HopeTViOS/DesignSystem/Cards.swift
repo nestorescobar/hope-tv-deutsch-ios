@@ -99,6 +99,11 @@ struct HeroArt: View {
     /// The hero shelf (ruled 2026-10-27, the one exception to awe#4951): every image fills the
     /// width and is cut at the bottom, as the web `Hero` (`object-cover object-top`).
     var fillsFromTop = false
+    /// Art that replaces the card's own: the hero's `bannerMobile`.
+    var art: (url: URL, blurhash: String?)? = nil
+
+    private var imageURL: URL? { art?.url ?? card.imageURL }
+    private var blurhash: String? { art == nil ? card.blurhash : art?.blurhash }
 
     /// The backdrop takes the frame itself and flattens its blur into one layer. Measured on the
     /// simulator: an unframed fill layer under `.blur` drew crisp and full-width over the fit
@@ -107,14 +112,14 @@ struct HeroArt: View {
         Group {
             if card.artIsFallback, !fillsFromTop {
                 ZStack {
-                    RemoteImage(url: card.imageURL, blurhash: card.blurhash)
+                    RemoteImage(url: imageURL, blurhash: blurhash)
                         .frame(width: width, height: height)
                         .blur(radius: 48, opaque: true)
                         .drawingGroup()
-                    RemoteImage(url: card.imageURL, blurhash: card.blurhash, contentMode: .fit, drawsPlaceholder: false)
+                    RemoteImage(url: imageURL, blurhash: blurhash, contentMode: .fit, drawsPlaceholder: false)
                 }
             } else {
-                RemoteImage(url: card.imageURL, blurhash: card.blurhash)
+                RemoteImage(url: imageURL, blurhash: blurhash)
             }
         }
         // A fill image is larger than the frame on one axis: the frame alignment picks the part kept.

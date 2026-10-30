@@ -131,8 +131,8 @@ private extension RootView {
 /// layout's chrome. The root tab bar ends with the platform Account tab when the Manifest flag
 /// is on (awe#6563); a layout frame never gets it.
 ///
-/// The `TabView` keeps the state and VoiceOver. `FloatingTabBar` draws over it, so the system bar
-/// is hidden and the bar's height comes in as a safe-area inset.
+/// Not a `TabView`: on iPhone it moves every tab after the fifth into a system "More" list, and
+/// the CMS can serve six. `FloatingTabBar` selects, and its height comes in as a safe-area inset.
 private struct LayoutTabs: View {
     let layoutId: String
     @Binding var selection: String
@@ -140,6 +140,8 @@ private struct LayoutTabs: View {
     let entry: (String) -> StackEntry
 
     @Environment(AppRouter.self) private var router
+    /// The tabs selected so far.
+    @State private var opened: Set<String> = []
 
     private var showsAccount: Bool { !pushed && router.tree.showsAccountTab }
 
@@ -154,25 +156,56 @@ private struct LayoutTabs: View {
     }
 
     var body: some View {
-        TabView(selection: $selection) {
+        ZStack {
             ForEach(router.tree.tabs(ofLayout: layoutId), id: \.screenId) { tab in
-                LayoutHost(entry: entry(tab.screenId), layoutId: router.tree.chromeLayoutId(for: .tab(layoutId: layoutId)), pushed: pushed)
-                    .toolbar(.hidden, for: .tabBar)
-                    .tabItem { Text(tab.label) }
-                    .tag(tab.screenId)
+                page(tab.screenId) {
+                    LayoutHost(entry: entry(tab.screenId), layoutId: router.tree.chromeLayoutId(for: .tab(layoutId: layoutId)), pushed: pushed)
+                }
             }
             if showsAccount {
-                AccountView()
-                    .toolbar(.hidden, for: .tabBar)
-                    .tabItem { Text(ChromeText.string(.account)) }
-                    .tag(AccountTab.tag)
+                page(AccountTab.tag) { AccountView() }
             }
         }
+        .onChange(of: selection, initial: true) { _, tab in opened.insert(tab) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             FloatingTabBar(items: items, selection: $selection)
         }
         // The hero runs under the status bar. A pushed frame keeps its Back button.
         .toolbar(pushed ? .automatic : .hidden, for: .navigationBar)
+    }
+
+    /// One tab, built on its first selection like a `TabView` tab, then kept so it holds its
+    /// scroll position. A tab out of view takes no touches, and the hero preview reads
+    /// `router.state.current`, so it stops there.
+    @ViewBuilder
+    private func page<Content: View>(_ id: String, @ViewBuilder content: () -> Content) -> some View {
+        let active = id == selection
+        if active || opened.contains(id) {
+            content()
+                .opacity(active ? 1 : 0)
+                .allowsHitTesting(active)
+                .accessibilityHidden(!active)
+        }
+    }
+}
+
+/// The solid band behind the status bar, on every screen. The notch and the Dynamic Island sit on
+/// it, so no art or text is ever cut by them, and scrolled content fades out under it. It takes its
+/// height from the safe area: the sensor housing differs per iPhone.
+private struct StatusBarBand: View {
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                theme.background.frame(height: geometry.safeAreaInsets.top)
+                LinearGradient(colors: [theme.background, theme.background.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: Layout.screenTopPadding)
+            }
+            .ignoresSafeArea(edges: .top)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -187,7 +220,7 @@ private struct LayoutHost: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        let screen = AnyView(ScreenHost(entry: entry, pushed: pushed))
+        let screen = AnyView(ScreenHost(entry: entry, pushed: pushed).overlay(alignment: .top) { StatusBarBand() })
 
         if let layoutId, let layout = store.manifest.layouts.first(where: { $0.id == layoutId }),
            let node = BlockRegistry.evaluate(
@@ -244,7 +277,6 @@ private struct ScreenBody: View {
     let screen: AppScreen
 
     /// nil until measured, so a view that sizes by it can use a stable guess on the first layout.
-    @State private var safeTop: CGFloat?
 
     @Environment(ContractStore.self) private var store
     @Environment(WatchProgressStore.self) private var progress
@@ -278,12 +310,9 @@ private struct ScreenBody: View {
                 ScrollView { content }
             }
         }
-        // A hero that leads the screen draws its art up by the top safe area plus the padding, so
-        // the art starts at the screen top.
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { safeTop = $0 }
         .environment(\.leadingHero, node.flatMap { node in
             node.leadingHeroId.map {
-                LeadingHero(nodeId: $0, insets: node.leadingHeroInsets, screenTop: (safeTop ?? 0) + Layout.screenTopPadding)
+                LeadingHero(nodeId: $0, insets: node.leadingHeroInsets, screenTop: Layout.screenTopPadding)
             }
         })
         .environment(\.stackEntry, entry)

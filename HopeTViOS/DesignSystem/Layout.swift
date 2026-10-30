@@ -31,7 +31,9 @@ enum Layout {
     }
 
     /// `ScreenBody`'s padding above the screen content. The safe area does the work.
-    static let screenTopPadding: CGFloat = 0
+    /// The fade of `StatusBarBand`: at rest it stays clear of the content, which it dims only once
+    /// scrolled. A hero that leads its screen rises by this much and meets the band.
+    static let screenTopPadding: CGFloat = 14
 
     /// `ScreenBody`'s padding below the screen content, above the floating tab bar.
     static let screenBottomPadding: CGFloat = 24

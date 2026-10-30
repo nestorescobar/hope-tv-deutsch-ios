@@ -53,7 +53,7 @@ If the compiler finds a tvOS-only API that this table misses, add a row.
 | `focusGrowth` | 30 | 0 | No focus growth on touch |
 | `cardCaptionInset` | 18 | 10 | Smaller cards |
 | `stageWidth` × `stageHeight` | 1920 × 1080 | Read from the window (`GeometryReader` at the root), not a constant | The phone has many sizes. Umami `screen` should send the real size |
-| `screenTopPadding` | 60 | 0; the safe area does the work | |
+| `screenTopPadding` | 60 | 14, the fade of `StatusBarBand` | |
 | `heroHeight` | 740 | about 1.1 × the screen width, cap 520 | The website hero is full width and taller than wide (screen recording) |
 | `bannerCardWidth` | 1200 | screen width − 2 × margin | |
 
@@ -89,9 +89,9 @@ to `Layout`. tvOS fonts are about 2× the iPhone size: a 38 pt tvOS title is abo
 
 - `RootView.LayoutTabs` is a `TabView` with text-only `tabItem`s. On iOS it already becomes a
   bottom tab bar. That is the compile-pass result.
-- Phone pass: the website's floating bar (docs/DESIGN.md). Keep the `TabView` for state and
-  VoiceOver, hide the system bar (`.toolbar(.hidden, for: .tabBar)`), and draw `FloatingTabBar`
-  over the content with the safe-area inset.
+- Phone pass: the website's floating bar (docs/DESIGN.md). `LayoutTabs` is a `ZStack`, not a
+  `TabView`: on iPhone a `TabView` moves every tab after the fifth into a system "More" list, and
+  production serves six. Draw `FloatingTabBar` with the safe-area inset.
 - Tab icons: the manifest sends Font Awesome names in `tabs[].icon` (`circle-play`,
   `magnifying-glass`, `video`). Map them to SF Symbols in one table
   (`circle-play` → `play.circle`, `magnifying-glass` → `magnifyingglass`, `video` → `tv`,
@@ -148,6 +148,19 @@ the sections above, and why.
 - **From Beginning** is a glyph in the player bar. The contract has no string for it, so VoiceOver
   reads it as Play until awe adds a key.
 - **Up Next.** Close after the end closes the player, as on tvOS.
+- **Status bar band.** Every screen draws a solid band behind the status bar (`StatusBarBand`).
+  The hero starts below it, and scrolled content fades out under it. The website runs the hero
+  under the status bar; the phone does not, because a face near the top of the art would sit
+  under the Dynamic Island. Landscape needs nothing: the player stays inside the safe area.
+- **Mobile hero art.** The hero reads `images.bannerMobile` from the raw resource
+  (`MobileBanner`), else the card's `banner`. ContractKit reads `banner` only, so tvOS is
+  unchanged. It is usually 1:1, but the CMS also serves 16:9. That art centers the person, so the
+  hero draws the logo and Watch now centered, as the website does. The abstract, meta line,
+  categories and Trailer stay on the show screen. An item with no `bannerMobile` keeps the
+  left-aligned hero with all of its parts.
+- **YouTube** plays in an iframe (`YouTubeEmbed`) on the Episode and Movie Screens, only when no
+  native source resolves. ContractKit still answers "can't play", because tvOS has no web view.
+  YouTube owns that player: no resume, no Keep watching, no Up Next, no Watch later toggle.
 - **Launch image.** The launch screen shows the app icon on `LaunchBackground`. Both shells use
   the same icon and the same launch image.
 - **Not done:** Dynamic Type (Phase 4) and the hero preview loop on a device.

@@ -20,7 +20,7 @@ enum TabIcon {
 }
 
 /// The website's floating tab bar: rounded, inset from the screen edges, icon only, the active
-/// tab in an accent pill. The `TabView` under it keeps the state; this bar only selects.
+/// tab in an accent pill. `LayoutTabs` keeps the tabs; this bar only selects.
 struct FloatingTabBar: View {
     struct Item: Identifiable {
         let id: String
