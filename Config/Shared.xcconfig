@@ -1,0 +1,14 @@
+// Shared build settings. The per-app binding lives in one shell file per App
+// (Config/Shells/<app>.xcconfig); its ClientToken lives in the gitignored
+// Config/Secrets/<app>.xcconfig.
+
+// Image Worker origin, shared by every shell (ADR-0138). A shell may override it.
+IMAGES_CDN = https:/$()/images.hopesoftware.org
+
+// The default app. A fresh checkout builds the production `hope-tv-deutsch-tv-app`.
+#include "Shells/hope-tv-deutsch-tv-app.xcconfig"
+
+// Optional local selector, gitignored. One line picks another app for Xcode builds:
+//   #include "Shells/hope-tv.xcconfig"
+// `xcodebuild -xcconfig Config/Shells/<app>.xcconfig` beats both includes.
+#include? "Shell.xcconfig"

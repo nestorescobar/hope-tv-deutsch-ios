@@ -1,0 +1,17 @@
+# The ClientToken per App — identity, not a secret, but never committed.
+Config/Secrets/*.xcconfig
+
+# The local app selector for Xcode builds
+Config/Shell.xcconfig
+
+# XcodeGen output — regenerate with `xcodegen generate`
+HopeTViOS.xcodeproj/
+HopeTViOS/Info.plist
+
+# Xcode and scripts/ci.sh output
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcresult
+
+.DS_Store

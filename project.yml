@@ -1,0 +1,96 @@
+# XcodeGen is the source of truth. `.xcodeproj` is gitignored: run `xcodegen generate`.
+name: HopeTViOS
+
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "18.0"
+  defaultConfig: Debug
+
+configs:
+  Debug: debug
+  Release: release
+
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+
+targets:
+  HopeTViOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      # Platform-free code copied from awe apps/tv/tvos. Only scripts/sync-from-awe.sh writes it.
+      - path: ContractKit
+      # The iPhone UI. Seeded once from awe, then owned by this repo.
+      - path: HopeTViOS
+    info:
+      path: HopeTViOS/Info.plist
+      properties:
+        CFBundleDisplayName: $(SHELL_DISPLAY_NAME)
+        CFBundleShortVersionString: "0.1.0"
+        # Each App Store Connect upload needs a higher build number:
+        # `xcodebuild archive ... CURRENT_PROJECT_VERSION=<n>`, or bump the default below.
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # No crypto beyond HTTPS: skips the export-compliance question per build.
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        # Audio goes on with the screen locked, and Picture in Picture works.
+        UIBackgroundModes: [audio]
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
+        UIUserInterfaceStyle: Dark
+        # Portrait for the app; the full-screen player rotates.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ApiBaseURL: $(API_BASE_URL)
+        ClientToken: $(CLIENT_TOKEN)
+        AppSlug: $(APP_SLUG)
+        EntityId: $(ENTITY_ID)
+        ContentLanguage: $(CONTENT_LANGUAGE)
+        ImagesCDN: $(IMAGES_CDN)
+        ImagesBucket: $(IMAGES_BUCKET)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHELL_BUNDLE_ID)
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        INFOPLIST_EXPAND_BUILD_SETTINGS: YES
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOL_FRAMEWORKS: ""
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+
+  HopeTViOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: HopeTViOSTests
+    dependencies:
+      - target: HopeTViOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHELL_BUNDLE_ID).tests
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/HopeTViOS.app/HopeTViOS
+        BUNDLE_LOADER: $(TEST_HOST)
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+
+schemes:
+  HopeTViOS:
+    build:
+      targets:
+        HopeTViOS: all
+        HopeTViOSTests: [test]
+    test:
+      targets:
+        - HopeTViOSTests

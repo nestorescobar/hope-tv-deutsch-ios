@@ -1,0 +1,30 @@
+# Runs scripts/ci.sh on a self-hosted Mac runner (the team's own Mac), not on a hosted runner.
+# Register the runner once: repo Settings > Actions > Runners > New self-hosted runner > macOS.
+# Until a runner with the `macOS` label is online, jobs wait in the queue; run scripts/ci.sh by hand.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: scripts/ci.sh
+        run: scripts/ci.sh
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-results
+          path: build/ci
+          if-no-files-found: ignore

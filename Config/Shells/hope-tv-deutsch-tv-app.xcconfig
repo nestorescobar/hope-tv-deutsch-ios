@@ -1,0 +1,32 @@
+// cspell:ignore hopetvdeutsch
+// Shell: the production App `hope-tv-deutsch-tv-app`. The default app of a fresh checkout.
+// A shell sets every per-app key. Select this shell with Config/Shell.xcconfig (Xcode)
+// or `APP=<app> scripts/ci.sh` / `xcodebuild -xcconfig Config/Shells/hope-tv-deutsch-tv-app.xcconfig` (command line).
+
+// xcconfig treats `//` as a comment, so the scheme separator is split with $()
+API_BASE_URL = https:/$()/frontend-api.hopeplatform.org
+
+// The CMS App slug, the `/v1/app/:appSlug` segment.
+APP_SLUG = hope-tv-deutsch-tv-app
+
+// The 24-hex id of the owning Entity, sent as X-AWE-Entity. A slug answers 400. Public.
+ENTITY_ID = 62555e58561ab08dc10b0f6d
+
+// BCP-47 tag sent as `?lang=`.
+CONTENT_LANGUAGE = de
+
+// Spaces bucket of the entity's images (ADR-0138). IMAGES_CDN is in Shared.xcconfig.
+IMAGES_BUCKET = hope-images
+
+SHELL_BUNDLE_ID = de.hopemedia.awe.hopetvdeutsch.ios
+// The iPhone binary has its own bundle id during the PoC. The shared tvOS id would
+// give a universal purchase; that choice is open (docs/DECISIONS.md).
+SHELL_DISPLAY_NAME = Hope TV Deutsch
+
+// The app icon set in HopeTViOS/Assets.xcassets.
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
+// Clear the token first, so a switch of app never keeps the token of another app.
+// The path is relative to this file.
+CLIENT_TOKEN =
+#include? "../Secrets/hope-tv-deutsch-tv-app.xcconfig"

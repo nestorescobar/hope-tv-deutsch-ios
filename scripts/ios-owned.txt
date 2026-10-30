@@ -1,0 +1,6 @@
+# Platform-free files under awe apps/tv/tvos/HopeTV that this repo owns anyway, one path per line.
+# scripts/sync-from-awe.sh never overwrites them; --seed copies them into HopeTViOS/.
+# Add a file here when its iPhone version must differ, and say why.
+
+# Ten-foot sizes (1920 x 1080 stage, focus growth). The iPhone needs phone sizes.
+DesignSystem/Layout.swift
