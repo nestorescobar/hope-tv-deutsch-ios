@@ -142,4 +142,12 @@ the sections above, and why.
   contract invariant 3 needs no change yet. The website's inline player is not built.
 - **A card sets `contentShape`.** Fallback art draws through `drawingGroup`, and without the shape
   a poster card with fallback art took no touches.
-- **Not done:** Dynamic Type (Phase 4), an app icon, and the hero preview loop on a device.
+- **Under the player.** AVKit draws the Info panel on tvOS only, so `PlayerDetails` draws the
+  description and the meta line. The header stays in place and the list scrolls to the current
+  episode. A tap opens the rest of the description.
+- **From Beginning** is a glyph in the player bar. The contract has no string for it, so VoiceOver
+  reads it as Play until awe adds a key.
+- **Up Next.** Close after the end closes the player, as on tvOS.
+- **Launch image.** The launch screen shows the app icon on `LaunchBackground`. Both shells use
+  the same icon and the same launch image.
+- **Not done:** Dynamic Type (Phase 4) and the hero preview loop on a device.

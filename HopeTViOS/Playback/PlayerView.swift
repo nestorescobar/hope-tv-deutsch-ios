@@ -23,6 +23,11 @@ struct PlayerView: View {
     @State private var reporter: MemberProgressReporter?
     @State private var pauseObservation: NSKeyValueObservation?
     @State private var endObserver: NSObjectProtocol?
+    /// The item's length, for the meta line under the player.
+    @State private var mediaDuration: Double?
+    /// The item's own end notification: a stream can stop short of its reported duration.
+    @State private var itemEnded = false
+    @State private var itemEndObserver: NSObjectProtocol?
     @State private var artwork: Task<Void, Never>?
     /// Up Next for this episode, decided once when it starts (`router.autoStarts` is read then).
     @State private var offer: UpNext.Offer?
@@ -73,6 +78,7 @@ struct PlayerView: View {
                         .padding(.horizontal, 8)
                         .frame(height: topBar)
                     PlayerDetails(request: request,
+                                  duration: mediaDuration,
                                   tabs: PlayerTab.tabs(for: request, canOpen: router.canOpenCard),
                                   actions: PlayerInfoAction.actions(for: request, canOpen: router.canOpenCard),
                                   onCard: { target in
@@ -87,7 +93,7 @@ struct PlayerView: View {
                 if let offer, offerDue, !offerClosed {
                     UpNextCard(offer: offer,
                                onPlay: { router.playFromPlayer(episodeId: offer.item.id, automatic: $0) },
-                               onClose: { offerClosed = true })
+                               onClose: closeOffer)
                         .frame(maxWidth: 420)
                         .padding(Layout.screenMargin)
                 }
@@ -111,7 +117,7 @@ struct PlayerView: View {
         }
     }
 
-    /// Close, then Like and Quality when this item has them.
+    /// Close, then From Beginning, Like and Quality when this item has them.
     @ViewBuilder
     private var chrome: some View {
         Button {
@@ -123,6 +129,19 @@ struct PlayerView: View {
         .accessibilityIdentifier("player-close")
 
         Spacer(minLength: 0)
+
+        // AVKit draws "From Beginning" in the tvOS Info panel and offers nothing like it on iOS.
+        // The contract has no string for it, so the button is a glyph and reads as Play. It waits
+        // for the player: until then a resume seek runs and a press would do nothing.
+        if request.recordsProgress, player != nil {
+            Button {
+                startOver()
+            } label: {
+                glyph("backward.end.fill")
+            }
+            .accessibilityLabel(ChromeText.string(.play))
+            .accessibilityIdentifier("player-from-beginning")
+        }
 
         // Read here, so a press redraws the item as "Liked" (awe#6871).
         if let item = request.likeItem {
@@ -205,7 +224,37 @@ struct PlayerView: View {
         player.play()
         store.diagnostics.log(.ok, "Playing \(request.title)", request.recordsProgress ? "on demand" : "without watch progress (live or trailer)")
         loadArtwork(into: item)
+        itemEndObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item,
+                                                                 queue: .main) { _ in
+            MainActor.assumeIsolated { itemEnded = true }
+        }
+        // A live stream with a DVR window reports a length too, and it means nothing.
+        if request.recordsProgress, let duration = try? await item.asset.load(.duration) {
+            mediaDuration = Self.seconds(duration)
+        }
         await propose(on: item)
+    }
+
+    /// Plays this item again from the start. The progress observers carry on and write the new point.
+    private func startOver() {
+        itemEnded = false
+        player?.seek(to: .zero)
+        player?.play()
+    }
+
+    /// The Up Next card's close. Before the end the item plays on. After the end nothing is left
+    /// to watch, so the player closes, as on tvOS (awe#6550).
+    private func closeOffer() {
+        offerClosed = true
+        guard let item = player?.currentItem else { return }
+        if Self.closesAfterOffer(itemEnded: itemEnded, currentTime: item.currentTime().seconds, duration: item.duration.seconds) {
+            dismiss()
+        }
+    }
+
+    /// `UpNext.hasEnded` covers the moment before the end notification reaches the main queue.
+    static func closesAfterOffer(itemEnded: Bool, currentTime: TimeInterval, duration: TimeInterval) -> Bool {
+        itemEnded || UpNext.hasEnded(currentTime: currentTime, duration: duration)
     }
 
     /// The season list for Up Next, when an item can open. A livestream and a trailer carry none.
@@ -347,6 +396,10 @@ struct PlayerView: View {
             NotificationCenter.default.removeObserver(endObserver)
         }
         endObserver = nil
+        if let itemEndObserver {
+            NotificationCenter.default.removeObserver(itemEndObserver)
+        }
+        itemEndObserver = nil
         if let observer, let player {
             player.removeTimeObserver(observer)
         }

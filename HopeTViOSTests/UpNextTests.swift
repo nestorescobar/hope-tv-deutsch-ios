@@ -407,3 +407,34 @@ final class PlayerPlaylistRoutingTests: XCTestCase {
         XCTAssertTrue(router.state.stack.isEmpty)
     }
 }
+
+final class PlayerDetailsRuleTests: XCTestCase {
+    private func metadata(genre: String? = nil, rating: String? = nil) -> PlaybackMetadata {
+        var metadata = PlaybackMetadata(title: "T", description: nil, showName: nil, artworkURL: nil)
+        metadata.genre = genre
+        metadata.contentRating = rating
+        return metadata
+    }
+
+    func testTheMetaLineFollowsTheInfoPanelOrder() {
+        XCTAssertEqual(metadata(genre: "Drama", rating: "FSK 12").metaLine(duration: 6720), "Drama • 1h 52m • FSK 12")
+    }
+
+    func testTheMetaLineLeavesOutAnUnknownPart() {
+        XCTAssertEqual(metadata(rating: "FSK 12").metaLine(duration: nil), "FSK 12")
+        XCTAssertEqual(metadata(genre: "").metaLine(duration: 3540), "59m")
+    }
+
+    func testNoKnownPartDrawsNoMetaLine() {
+        XCTAssertNil(metadata().metaLine(duration: nil))
+    }
+
+    func testCloseBeforeTheEndKeepsThePlayer() {
+        XCTAssertFalse(PlayerView.closesAfterOffer(itemEnded: false, currentTime: 90, duration: 100))
+    }
+
+    func testCloseAfterTheEndClosesThePlayer() {
+        XCTAssertTrue(PlayerView.closesAfterOffer(itemEnded: true, currentTime: 90, duration: 100))
+        XCTAssertTrue(PlayerView.closesAfterOffer(itemEnded: false, currentTime: 99.8, duration: 100))
+    }
+}

@@ -1,57 +1,105 @@
 import SwiftUI
 
-/// The list under the player in portrait (docs/PORTING.md Section 4): the title and Go to show,
-/// then the tabs that tvOS draws in the Info panel. A select starts an item through
-/// `AppRouter.playFromPlayer`, as on tvOS.
+/// The details under the player in portrait (docs/PORTING.md Section 4): what the tvOS Info panel
+/// shows (the description and the meta line), Go to show, then the tabs. The header stays in place
+/// and only the list scrolls, so an episode far down a season keeps its title and description on
+/// screen. A select starts an item through `AppRouter.playFromPlayer`, as on tvOS.
 struct PlayerDetails: View {
     let request: PlaybackRequest
+    /// The item's length, once it loads.
+    let duration: Double?
     let tabs: [PlayerTab]
     let actions: [PlayerInfoAction]
     let onCard: (CardTarget) -> Void
     let onEpisode: (_ id: String) -> Void
 
+    /// The height of a description that a tap opened. The rest of it scrolls, so the list stays.
+    private static let openDescriptionHeight: CGFloat = 180
+
     @Environment(\.appTheme) private var theme
     @State private var selected = 0
+    @State private var descriptionOpen = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let show = request.metadata.showName {
-                        Text(show.uppercased())
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(theme.accent)
-                    }
-                    Text(request.title)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(theme.textPrimary)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let show = request.metadata.showName {
+                    Text(show.uppercased())
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(theme.accent)
                 }
-                ForEach(actions, id: \.title) { action in
-                    switch action {
-                    case let .goToShow(target):
-                        Button {
-                            onCard(target)
-                        } label: {
-                            Label(action.title, systemImage: "rectangle.stack")
-                        }
-                        .buttonStyle(ActionButtonStyle())
-                        .accessibilityIdentifier("info-go-to-show")
-                    }
-                }
-                if tabs.count > 1 {
-                    HStack(spacing: 8) {
-                        ForEach(Array(tabs.enumerated()), id: \.offset) { index, tab in
-                            Button(tab.title) { selected = index }
-                                .buttonStyle(ActionButtonStyle(prominent: index == selected))
-                        }
-                    }
-                }
-                if tabs.indices.contains(selected) {
-                    tabContent(tabs[selected])
+                Text(request.title)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                if let line = request.metadata.metaLine(duration: duration) {
+                    Text(line)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.textSecondary)
+                        .accessibilityIdentifier("player-meta")
                 }
             }
-            .padding(Layout.screenMargin)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            description
+            ForEach(actions, id: \.title) { action in
+                switch action {
+                case let .goToShow(target):
+                    Button {
+                        onCard(target)
+                    } label: {
+                        Label(action.title, systemImage: "rectangle.stack")
+                    }
+                    .buttonStyle(ActionButtonStyle())
+                    .accessibilityIdentifier("info-go-to-show")
+                }
+            }
+            if tabs.count > 1 {
+                HStack(spacing: 8) {
+                    ForEach(Array(tabs.enumerated()), id: \.offset) { index, tab in
+                        Button(tab.title) { selected = index }
+                            .buttonStyle(ActionButtonStyle(prominent: index == selected))
+                    }
+                }
+            }
+            if tabs.indices.contains(selected) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        tabContent(tabs[selected])
+                            .padding(.bottom, Layout.screenMargin)
+                    }
+                    // tvOS starts focus on the current item (awe#6550). A list that opens at the
+                    // top would hide it in a long season.
+                    .task(id: selected) {
+                        if case let .episodes(playlist) = tabs[selected], let id = playlist.currentItemId {
+                            proxy.scrollTo(id, anchor: .top)
+                        }
+                    }
+                }
+            }
+        }
+        .padding([.horizontal, .top], Layout.screenMargin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Two lines, and a tap opens the rest. With no list below (a movie) it has the space to open.
+    @ViewBuilder
+    private var description: some View {
+        if let text = request.metadata.description, !text.isEmpty {
+            let open = descriptionOpen || tabs.isEmpty
+            let label = Text(text)
+                .font(.system(size: 15))
+                .foregroundStyle(theme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if open {
+                    ScrollView { label }
+                        .frame(maxHeight: tabs.isEmpty ? .infinity : Self.openDescriptionHeight)
+                } else {
+                    label.lineLimit(2)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { descriptionOpen.toggle() }
+            .accessibilityIdentifier("player-description")
         }
     }
 
@@ -59,7 +107,7 @@ struct PlayerDetails: View {
     private func tabContent(_ tab: PlayerTab) -> some View {
         switch tab {
         case let .episodes(playlist):
-            let currentId = playlist.currentIndex.map { playlist.items[$0].id }
+            let currentId = playlist.currentItemId
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(playlist.items) { item in
                     let isCurrent = item.id == currentId
@@ -67,6 +115,7 @@ struct PlayerDetails: View {
                         // The episode on show keeps playing.
                         if !isCurrent { onEpisode(item.id) }
                     }
+                    .id(item.id)
                     .accessibilityIdentifier("episodes-tab-item")
                 }
             }
@@ -82,6 +131,20 @@ struct PlayerDetails: View {
         case let .schedule(schedule):
             ScheduleTabList(schedule: schedule)
         }
+    }
+}
+
+extension Playlist {
+    /// The episode on show. nil when the list does not hold it.
+    var currentItemId: String? { currentIndex.map { items[$0].id } }
+}
+
+extension PlaybackMetadata {
+    /// The tvOS Info panel meta line (awe#6867): "Drama • 1h 52m • FSK 12". AVKit draws it there,
+    /// but on iOS no system view shows these values. nil when nothing is known.
+    func metaLine(duration: Double?) -> String? {
+        let parts = [genre, DurationFormatter.short(seconds: duration), contentRating].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 }
 
