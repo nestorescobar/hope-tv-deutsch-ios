@@ -474,10 +474,10 @@ final class LayoutStyleRenderTests: XCTestCase {
             node("first", "Box", Self.block256.replacingOccurrences(of: "#0000ff", with: Self.red), parent: "row"),
             node("last", "Box", Self.block256, parent: "row"),
         ].joined(separator: ",\n"), root: ["row"])
-        // Two 256 pt children and the 40 pt gap: red 544...800, blue 248...504.
+        // Two 256 pt children and the row gap: red 544...800, blue 272...528.
         XCTAssertEqual(pixels.height, 50)
         XCTAssertTrue(pixels.isRed(797, 25), "the first child sits at the right edge")
-        XCTAssertTrue(pixels.isBlue(260, 25), "the last child is leftmost")
+        XCTAssertTrue(pixels.isBlue(280, 25), "the last child is leftmost")
         XCTAssertTrue(pixels.isClear(2, 25), "nothing at the left edge")
     }
 

@@ -243,61 +243,6 @@ final class UpNextOfferTests: XCTestCase {
     }
 }
 
-/// The item's own end notification marks it ended, so Back on the offer closes the player even
-/// when a stream stops short of its reported duration (a last segment shorter than its `EXTINF`).
-@MainActor
-final class UpNextEndTests: XCTestCase {
-    private func controller(for item: AVPlayerItem) -> UpNextProposalController {
-        let next = Playlist.Item(id: "aaaaaaaaaaaaaaaaaaaaaa02", title: "E2", posterURL: nil, isPlayable: true)
-        return UpNextProposalController(
-            offer: UpNext.Offer(item: next, mode: .stillWatching),
-            item: item,
-            theme: AppTheme(tokens: PresetTokens(preset: .object([:]))),
-            closePlayer: {}
-        )
-    }
-
-    private func item() -> AVPlayerItem {
-        AVPlayerItem(url: URL(string: "https://example.com/main.m3u8")!)
-    }
-
-    /// AVFoundation can post on another thread, so the flag can arrive one main-queue turn later.
-    private func settle(_ upNext: UpNextProposalController) async throws {
-        for _ in 0..<50 where !upNext.itemEnded {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-    }
-
-    func testTheItemsEndMarksItEnded() async throws {
-        let item = item()
-        let upNext = controller(for: item)
-        XCTAssertFalse(upNext.itemEnded)
-
-        NotificationCenter.default.post(name: AVPlayerItem.didPlayToEndTimeNotification, object: item)
-        try await settle(upNext)
-        XCTAssertTrue(upNext.itemEnded)
-    }
-
-    func testTheEndPostedFromAnotherThreadMarksItEnded() async throws {
-        let item = item()
-        let upNext = controller(for: item)
-
-        await Task.detached {
-            NotificationCenter.default.post(name: AVPlayerItem.didPlayToEndTimeNotification, object: item)
-        }.value
-        try await settle(upNext)
-        XCTAssertTrue(upNext.itemEnded)
-    }
-
-    func testAnotherItemsEndDoesNotCount() async throws {
-        let upNext = controller(for: item())
-
-        NotificationCenter.default.post(name: AVPlayerItem.didPlayToEndTimeNotification, object: item())
-        try await settle(upNext)
-        XCTAssertFalse(upNext.itemEnded, "the previous player's item ends after the next one starts")
-    }
-}
-
 /// Starting a playlist item from the player (Episodes tab, Up Next) and the auto-start counter.
 @MainActor
 final class PlayerPlaylistRoutingTests: XCTestCase {

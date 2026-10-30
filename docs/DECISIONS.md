@@ -33,6 +33,7 @@ Full proposal (private Claude doc, ask the owner for access):
 | 4 | **TV-shaped content on a phone.** Editors author for 1920 × 1080. | Medium | Review with an editor in Phase 2 |
 | 5 | **A second repo to run** (signing, secrets, access). | Low | Move to the `hope-media` org before any store release |
 | 6 | **ClientToken in the binary.** Readable, as on tvOS. A `kind: 'app'` row reaches only public App Contract content (ADR-0218). | Low | Own Client row, rotatable |
+| 7 | **An invalid subtitle playlist stops the whole video.** Jetstream wrote `#EXT-X-TARGETDURATION:3539.3` in `subtitles_en/main.m3u8` of `jsv:mmPNfkcIEdR`. HLS requires an integer. AVFoundation fails the item with -12642 and -12880, at any device language. It is the stream, not this app: a command-line AVFoundation probe fails the same way, and plays when only that rendition is removed. Every Apple player is exposed, so tvOS too. How many streams have it is not known. | High | Report to Jetstream; survey the deutsch catalog. An app workaround needs a custom resource loader |
 
 ## Open questions
 
@@ -42,3 +43,4 @@ Full proposal (private Claude doc, ask the owner for access):
 - [ ] Member sign-in on the phone: the tvOS device-code flow, or the website's magic link?
 - [ ] Bundle id: the tvOS id (`de.hopemedia.awe.hopetvdeutsch`, one universal purchase) or a separate iOS id?
 - [ ] Repo home: move to `hope-media` now or before the first store build?
+- [ ] Do Jetstream streams with subtitles in the deutsch catalog have the invalid target duration (risk 7)?

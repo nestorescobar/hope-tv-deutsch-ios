@@ -4,7 +4,7 @@ import SwiftUI
 /// Draws one evaluated node and its children.
 ///
 /// Every decision about *what* is on screen was made by `BlockRegistry`; this file only
-/// decides how it looks and how focus moves. `slot` is the layout's content slot — the
+/// decides how it looks. `slot` is the layout's content slot — the
 /// screen tree renders there.
 struct NodeView: View {
     let node: EvaluatedNode
@@ -17,15 +17,8 @@ struct NodeView: View {
 
     @Environment(\.appTheme) private var theme
     @Environment(AppRouter.self) private var router
-    @Environment(\.defaultFocusNodeId) private var defaultFocusNodeId
 
     var body: some View {
-        // Each node says whether it is the default one, so a child never inherits its parent's.
-        block.environment(\.isDefaultFocusBlock, defaultFocusNodeId != nil && defaultFocusNodeId == node.id)
-    }
-
-    @ViewBuilder
-    private var block: some View {
         switch node.content {
         case let .stack(axis, background, style):
             // No `if` around the stack: a background that comes or goes on a refresh must not
@@ -101,7 +94,7 @@ struct NodeView: View {
 
         case let .message(text):
             Text(text)
-                .font(.system(size: 26))
+                .font(.system(size: Layout.text(26)))
                 .foregroundStyle(theme.textSecondary)
 
         case nil:
@@ -109,28 +102,24 @@ struct NodeView: View {
         }
     }
 
-    /// The children in a `FlexStackLayout`. The gaps stay 40 pt in a row and 44 pt in a column
-    /// (a decision, awe#6297): the minimum gap, as CSS `gap` with `justify-content`.
+    /// The children in a `FlexStackLayout`. The gaps are the minimum gap, as CSS `gap` with
+    /// `justify-content` (awe#6297). A row of a detail block or a player is a column on a phone:
+    /// authors place them side by side for a 1920 pt stage.
     private func stack(_ axis: BlockContent.Axis, _ style: LayoutStyle) -> some View {
         let insets = style.contentInsets
         // `box-sizing: border-box`: the heights include the padding and the border.
         let inner = { (height: CGFloat?) in height.map { max(0, $0 - insets.top - insets.bottom) } }
         let stretches = style.align == .stretch
-        return FlexStackLayout(axis: axis, spacing: axis == .horizontal ? 40 : 44, justify: style.justify,
+        let axis = node.children.contains(where: \.isWideBlock) ? .vertical : axis
+        return FlexStackLayout(axis: axis, spacing: axis == .horizontal ? Layout.rowGap : Layout.columnGap, justify: style.justify,
                                align: style.align, minHeight: inner(style.minHeight), height: inner(style.height),
                                fillsWidth: stretch == .width, fillsHeight: stretch == .height && style.height == nil) {
             ForEach(node.children) { child in
                 if axis == .horizontal {
-                    // Each column is a focus section as tall as the row. A move sideways from a
-                    // button low in one column (Play under a poster) then lands in the next column,
-                    // on its first focusable (Go to show at its top), instead of finding nothing in
-                    // the button's own band.
                     NodeView(node: child, slot: slot, stretch: stretches ? .height : .none)
                         .frame(maxHeight: .infinity, alignment: Self.rowAlignment(style.align))
-                        .focusSection()
                 } else {
                     NodeView(node: child, slot: slot, stretch: stretches ? .width : .none)
-                        .focusSection()
                 }
             }
         }
@@ -149,8 +138,7 @@ struct NodeView: View {
 // MARK: - Layout backgrounds
 
 /// The background clipped to the corner radius, then the border over it (awe#6239, awe#6297).
-/// The children draw over both and are not clipped, so a focused card can still lift past a
-/// rounded corner.
+/// The children draw over both and are not clipped.
 private struct LayoutDecorationView: View {
     let background: LayoutBackground?
     let style: LayoutStyle
@@ -208,7 +196,7 @@ private extension EdgeInsets {
 }
 
 /// The color, then the image over it, sized to cover the block at its alignment and clipped to
-/// the block. Decoration only: no focus, no hit tests, hidden from VoiceOver. An image that does
+/// the block. Decoration only: no hit tests, hidden from VoiceOver. An image that does
 /// not load draws nothing, so the color shows.
 private struct LayoutBackgroundView: View {
     let background: LayoutBackground
@@ -278,7 +266,7 @@ private struct TextBlockView: View {
 /// The text faces of the content blocks: `SimpleText`, `Header` and `RichText` share them.
 enum BlockFont {
     static func heading(level: Int, theme: AppTheme) -> Font {
-        let sizes: [CGFloat] = [76, 64, 54, 46, 38, 32]
+        let sizes: [CGFloat] = [28, 24, 21, 19, 17, 15]
         let size = sizes[min(max(level, 1), 6) - 1]
         if let name = theme.headingFont {
             return .custom(name, size: size)
@@ -286,8 +274,9 @@ enum BlockFont {
         return .system(size: size, weight: level <= 2 ? .bold : .semibold)
     }
 
-    /// The preset body face when set, else the system face at `weight`.
+    /// The preset body face when set, else the system face at `weight`. `size` is the tvOS size.
     static func body(theme: AppTheme, size: CGFloat = 28, weight: Font.Weight = .regular) -> Font {
+        let size = Layout.text(size)
         if let name = theme.bodyFont {
             let face = Font.custom(name, size: size)
             return weight == .regular ? face : face.weight(weight)
@@ -296,8 +285,8 @@ enum BlockFont {
     }
 }
 
-/// The Button block, and the link row of a `Header`. Only `linkType: "screen"` opens anything:
-/// a TV has no browser to hand a `url` to.
+/// The Button block, and the link row of a `Header`. Only `linkType: "screen"` opens anything,
+/// as on tvOS: an external link needs its own review on a phone.
 struct ScreenLinkButton: View {
     let model: ButtonModel
 
@@ -311,10 +300,7 @@ struct ScreenLinkButton: View {
             }
             router.open(screenId: model.screenId, param: model.screenParam)
         }
-        .font(.system(size: 30, weight: .semibold))
         .disabled(model.disabled)
-        .modifier(TakesDefaultFocus())
-        .focusSection()
     }
 }
 
@@ -325,16 +311,12 @@ struct ShelfView: View {
     @Environment(\.loadNextPage) private var loadNextPage
     /// The season chip in use. nil is "All".
     @State private var season: String?
-    /// The focused grid card, so focus on the last row can load the next page.
-    @FocusState private var focusedCard: String?
 
-    /// The grid's measured width. nil until the first layout, which then assumes the full four
-    /// columns.
+    /// The grid's measured width. nil until the first layout.
     @State private var gridAvailableWidth: CGFloat?
 
     private let gridSpacing = GridColumns.spacing
-    /// Four columns, or as many as fit the width the grid gets: the search results sit beside
-    /// the grid keyboard, so they get less than the screen width.
+    /// As many columns as fit the width the grid gets.
     private var gridColumns: Int { GridColumns.count(width: gridAvailableWidth, metrics: model.gridMetrics) }
     private var gridCardWidth: CGFloat {
         GridColumns.cardWidth(width: gridAvailableWidth, columns: gridColumns, metrics: model.gridMetrics)
@@ -369,28 +351,31 @@ struct ShelfView: View {
         }
     }
 
+    /// A card of the last rows that appears asks for the next page. The store gates it: paging
+    /// served, has more, one at a time.
+    private func pageIfLast(_ card: CardModel, in visible: [CardModel]) {
+        guard let index = visible.firstIndex(where: { $0.id == card.id }),
+              GridPaging.triggers(index: index, count: visible.count, columns: gridColumns) else { return }
+        loadNextPage?(model.nodeId)
+    }
+
     private var shelf: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             if let title = model.title, !title.isEmpty {
-                Text(title)
-                    .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(theme.textPrimary)
+                ShelfHeading(title: title)
                     // UI tests find a header by id: a search grid's title is chrome text.
                     .accessibilityIdentifier("shelf-title-\(model.nodeId)")
             }
 
             if let message = model.emptyMessage {
                 Text(message)
-                    .font(.system(size: 26))
+                    .font(.system(size: Layout.text(26)))
                     .foregroundStyle(theme.textSecondary)
             } else if model.layout == .grid {
                 if !model.seasons.isEmpty {
                     SeasonChips(seasons: model.seasons, selected: $season)
                 }
                 let visible = model.cards(inSeason: season)
-                // Each row is a focus section as wide as the grid, so Down from a column with no
-                // card below still enters a short last row (awe#6458). A LazyVGrid gives Down no
-                // target under an empty column.
                 LazyVStack(alignment: .leading, spacing: gridSpacing) {
                     ForEach(Array(stride(from: 0, to: visible.count, by: gridColumns)), id: \.self) { start in
                         // Top-aligned: a poster grid's no-poster card is shorter. Every card of any
@@ -399,25 +384,15 @@ struct ShelfView: View {
                             ForEach(visible[start..<min(start + gridColumns, visible.count)]) { card in
                                 CardButton(card: card, shape: model.gridShape(card), width: gridCardWidth,
                                            titleLines: model.titleLines)
-                                    .focused($focusedCard, equals: card.id)
-                                    .modifier(DefaultFocusRequest(enabled: card.id == model.cards.first?.id) { focusedCard = card.id })
+                                    .onAppear { pageIfLast(card, in: visible) }
                             }
                         }
                         .frame(width: gridWidth, alignment: .leading)
-                        .focusSection()
                     }
                 }
-                .padding(.vertical, Layout.focusGrowth)
                 // Takes the offered width and no more, so the rows never set the shelf's width.
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridAvailableWidth = $0 }
-                // Focus on the last row of the grid on show (a season chip filters it) asks for
-                // the next page. The store gates it: paging served, has more, one at a time.
-                .onChange(of: focusedCard) { _, id in
-                    guard let id, let index = visible.firstIndex(where: { $0.id == id }),
-                          GridPaging.triggers(index: index, count: visible.count, columns: gridColumns) else { return }
-                    loadNextPage?(model.nodeId)
-                }
             } else if model.layout == .list {
                 if !model.seasons.isEmpty {
                     SeasonChips(seasons: model.seasons, selected: $season)
@@ -431,62 +406,62 @@ struct ShelfView: View {
                             Rectangle().fill(theme.surfaceSelected).frame(height: 1)
                         }
                         EpisodeListRow(card: card, numbered: numbered)
-                            .focused($focusedCard, equals: card.id)
-                            .modifier(DefaultFocusRequest(enabled: card.id == model.cards.first?.id) { focusedCard = card.id })
+                            .onAppear { pageIfLast(card, in: visible) }
                     }
-                }
-                // The same rule as the grid: focus on one of the last rows asks for the next page.
-                .onChange(of: focusedCard) { _, id in
-                    guard let id, let index = visible.firstIndex(where: { $0.id == id }),
-                          GridPaging.triggers(index: index, count: visible.count, columns: gridColumns) else { return }
-                    loadNextPage?(model.nodeId)
                 }
             } else if model.layout == .sidewaysGrid {
                 // Two rows that scroll sideways together (a Collection record with `listLayout:
                 // "grid"`). The cards fill each column top to bottom, so the order reads left to
-                // right. Up from the top row and Down from the bottom row leave for the next block.
-                // Page 1 only, as a row. One card draws one row.
+                // right. Page 1 only, as a row. One card draws one row.
                 let rows = model.cards.count < 2 ? 1 : 2
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHGrid(rows: Array(repeating: GridItem(.fixed(rowShape.shelfHeight), spacing: gridSpacing,
                                                               alignment: .top), count: rows),
-                              alignment: .top, spacing: 40) {
+                              alignment: .top, spacing: Layout.cardGap) {
                         ForEach(model.cards) { card in
                             CardButton(card: card, shape: shape(of: card))
-                                .modifier(TakesDefaultFocus(enabled: card.id == model.cards.first?.id))
                         }
                     }
                     .padding(.horizontal, Layout.screenMargin)
-                    .padding(.vertical, Layout.focusGrowth)
                 }
-                .frame(height: CGFloat(rows) * rowShape.shelfHeight + CGFloat(rows - 1) * gridSpacing
-                    + Layout.focusGrowth * 2)
+                .frame(height: CGFloat(rows) * rowShape.shelfHeight + CGFloat(rows - 1) * gridSpacing)
                 .padding(.horizontal, -Layout.screenMargin)
                 // UI tests find the grid by id; the cards inside keep their own labels.
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("sideways-grid-\(model.nodeId)")
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 40) {
+                    LazyHStack(alignment: .top, spacing: Layout.cardGap) {
                         ForEach(model.cards) { card in
                             CardButton(card: card, shape: shape(of: card))
-                                .modifier(TakesDefaultFocus(enabled: card.id == model.cards.first?.id))
                         }
                     }
                     .padding(.horizontal, Layout.screenMargin)
-                    .padding(.vertical, Layout.focusGrowth)
                 }
-                .frame(height: rowShape.shelfHeight + Layout.focusGrowth * 2)
+                .frame(height: rowShape.shelfHeight)
                 .padding(.horizontal, -Layout.screenMargin)
             }
         }
-        .focusSection()
     }
 }
 
-/// One `EpisodesList` list row: the episode number, a 16:9 thumbnail, then the title with the
-/// duration on its right and the abstract (3 lines) below. The whole row is one button. Focus
-/// draws a `surfaceSelected` panel with no lift or scale, so the text stays still and readable.
+/// A shelf's title, as the website draws it: uppercase with wide letter spacing.
+struct ShelfHeading: View {
+    let title: String
+
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 17, weight: .bold))
+            .tracking(1.2)
+            .foregroundStyle(theme.textPrimary)
+            .lineLimit(2)
+    }
+}
+
+/// One `EpisodesList` list row: the episode number, a 16:9 thumbnail, then the title, the duration
+/// and the abstract (2 lines). The whole row is one button.
 private struct EpisodeListRow: View {
     let card: CardModel
     /// Reserves the number column. True when any row of the list has a number.
@@ -500,33 +475,10 @@ private struct EpisodeListRow: View {
         } label: {
             EpisodeListRowFace(card: card, numbered: numbered)
         }
-        .buttonStyle(EpisodeListRowStyle())
+        .buttonStyle(PressableCardStyle())
         .modifier(SelectionCue(target: card.target))
         .modifier(CardMenuModifier(menu: card.menu))
         .accessibilityLabel(card.title)
-    }
-}
-
-private struct EpisodeListRowStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        EpisodeListRowPlate(label: configuration.label)
-    }
-}
-
-/// The focus panel behind a row, read from the focus state as `ChipFace` does.
-private struct EpisodeListRowPlate<Label: View>: View {
-    let label: Label
-
-    @Environment(\.isFocused) private var focused
-    @Environment(\.appTheme) private var theme
-
-    var body: some View {
-        label
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(focused ? theme.surfaceSelected : Color.clear, in: RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
-            .animation(.easeOut(duration: 0.15), value: focused)
     }
 }
 
@@ -536,46 +488,46 @@ private struct EpisodeListRowFace: View {
 
     @Environment(\.appTheme) private var theme
 
-    private let thumbnail = CGSize(width: 330, height: 186)
+    private let thumbnail = CGSize(width: 128, height: 72)
 
     var body: some View {
         // The text starts at the thumbnail's top; the number stays centered on the thumbnail.
-        HStack(alignment: .top, spacing: 32) {
+        HStack(alignment: .top, spacing: 12) {
             if numbered {
                 Text(card.number.map(String.init) ?? "")
-                    .font(.system(size: 48, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(theme.textSecondary)
-                    .frame(width: 80, height: thumbnail.height)
+                    .frame(width: 24, height: thumbnail.height)
                     .accessibilityHidden(true)
             }
             RemoteImage(url: card.imageURL, blurhash: card.blurhash)
                 .frame(width: thumbnail.width, height: thumbnail.height)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline, spacing: 24) {
-                    Text(card.title)
-                        .font(.system(size: 30, weight: .semibold))
-                        .foregroundStyle(theme.textPrimary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                // An `EpisodesList` card's subtitle is its duration, or nil.
+                if let duration = card.subtitle {
+                    Text(duration)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.textSecondary)
                         .lineLimit(1)
-                    Spacer(minLength: 0)
-                    // An `EpisodesList` card's subtitle is its duration, or nil.
-                    if let duration = card.subtitle {
-                        Text(duration)
-                            .font(.system(size: 24))
-                            .foregroundStyle(theme.textSecondary)
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
                 }
                 if let abstract = card.abstract {
                     Text(abstract)
-                        .font(.system(size: 24))
+                        .font(.system(size: 13))
                         .foregroundStyle(theme.textSecondary)
-                        .lineLimit(3)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
     }
 }
 
@@ -600,23 +552,18 @@ extension ScheduleModel.Entry {
     }
 }
 
-/// One schedule row. Every row is a focus stop, because the strip sits below the player and a
-/// tvOS ScrollView scrolls only to focus (awe#5036).
-///
-/// A linked row shows `play.fill` beside its time, gets card lift on focus, and goes through the
-/// same `select` path a card uses (tap-to-play). A title-only row is not a button: a press does nothing. On
-/// focus it swaps its surface for `surfaceSelected` and draws a 4 pt `focusRing` border, with no
-/// lift, so it reads across a room.
+/// One schedule row: the thumbnail, the title and the show, the time at the right. A linked row
+/// shows `play.fill` beside its time and goes through the same `select` path a card uses
+/// (tap-to-play). A title-only row is not a button: a press does nothing.
 ///
 /// Every row has the same size: the thumbnail slot is always there, and a row with no image
 /// draws a placeholder in it. The on-air row is larger, says "Now" in the accent color, and
 /// draws its progress through the broadcast.
 ///
-/// The live player's Schedule tab draws its information rows with this view too (awe#6553).
+/// The live player's schedule draws its information rows with this view too (awe#6553).
 struct ScheduleRow: View {
     let entry: ScheduleModel.Entry
     let now: Date
-    let focus: FocusState<String?>.Binding
 
     @Environment(\.appTheme) private var theme
     @Environment(AppRouter.self) private var router
@@ -627,34 +574,21 @@ struct ScheduleRow: View {
             Button {
                 entry.press(router: router)
             } label: {
-                face(linked: true, fill: theme.surface)
+                face(linked: true)
             }
-            .buttonStyle(.card)
-            .focused(focus, equals: entry.id)
+            .buttonStyle(PressableCardStyle())
             .accessibilityLabel(label)
         case let .linked(target):
             Button {
                 entry.press(router: router)
             } label: {
-                face(linked: true, fill: theme.surface)
+                face(linked: true)
             }
-            .buttonStyle(.card)
+            .buttonStyle(PressableCardStyle())
             .modifier(SelectionCue(target: target))
-            .focused(focus, equals: entry.id)
             .accessibilityLabel(label)
         case .information:
-            let focused = focus.wrappedValue == entry.id
-            face(linked: false, fill: focused ? theme.surfaceSelected : theme.surface)
-                // An overlay, so the layout does not move when focus arrives.
-                .overlay {
-                    if focused {
-                        RoundedRectangle(cornerRadius: 12).strokeBorder(theme.focusRing, lineWidth: 4)
-                    }
-                }
-                .focusable()
-                .focused(focus, equals: entry.id)
-                .focusEffectDisabled()
-                .animation(.easeOut(duration: 0.15), value: focused)
+            face(linked: false)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(label)
         }
@@ -666,21 +600,42 @@ struct ScheduleRow: View {
 
     private var thumbnail: CGSize { ScheduleRowMetrics.thumbnail(isCurrent: entry.isCurrent) }
 
-    private func face(linked: Bool, fill: Color) -> some View {
-        let text = ScheduleRowMetrics.text(isCurrent: entry.isCurrent)
-        return HStack(alignment: .top, spacing: ScheduleRowMetrics.spacing) {
+    private func face(linked: Bool) -> some View {
+        HStack(alignment: .center, spacing: ScheduleRowMetrics.spacing) {
             thumbnailView
-            Group {
+            VStack(alignment: .leading, spacing: 2) {
                 if entry.isCurrent {
-                    currentText(linked: linked)
-                } else {
-                    rowText(linked: linked)
+                    Text(ChromeText.string(.now))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(theme.background)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(theme.accent, in: RoundedRectangle(cornerRadius: 4))
+                }
+                Text(entry.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if let show = entry.showTitle {
+                    Text(show)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.textSecondary)
+                        .lineLimit(1)
+                }
+                if entry.isCurrent, let progress = entry.progress(at: now) {
+                    ProgressBar(fraction: progress)
+                        .padding(.top, 2)
                 }
             }
-            .frame(width: text.width, height: text.height, alignment: .topLeading)
+            Spacer(minLength: 0)
+            timeLine(linked: linked)
         }
         .padding(ScheduleRowMetrics.padding)
-        .background(fill, in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: ScheduleRowMetrics.rowHeight(isCurrent: entry.isCurrent))
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
     }
 
     /// The slot is always reserved, so every row keeps one size.
@@ -693,7 +648,7 @@ struct ScheduleRow: View {
                 ZStack {
                     theme.surfaceSelected
                     Image(systemName: "tv")
-                        .font(.system(size: entry.isCurrent ? 64 : 40))
+                        .font(.system(size: entry.isCurrent ? 28 : 20))
                         .foregroundStyle(theme.textSecondary)
                 }
                 .accessibilityHidden(true)
@@ -703,88 +658,34 @@ struct ScheduleRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func timeLine(linked: Bool, size: CGFloat) -> some View {
-        HStack(spacing: 10) {
+    private func timeLine(linked: Bool) -> some View {
+        HStack(spacing: 4) {
             if linked {
                 Image(systemName: "play.fill")
-                    .font(.system(size: size - 4))
+                    .font(.system(size: 10))
                     .accessibilityHidden(true)
             }
-            if entry.isCurrent {
-                // The on-air row says "Now" in place of its start time, as the web does.
-                Text(ChromeText.string(.now)).font(.system(size: size, weight: .bold))
-                if let range = timeRange {
-                    Text(range).font(.system(size: size - 2)).foregroundStyle(theme.textSecondary)
-                }
-            } else {
-                Text(entry.time ?? "").font(.system(size: size))
-            }
+            Text(entry.time ?? "")
+                .font(.system(size: 13, weight: .semibold))
+                .fixedSize()
         }
         .foregroundStyle(theme.accent)
-    }
-
-    private var timeRange: String? {
-        guard let start = entry.time, let end = TimeOfDayFormatter.string(from: entry.endsAt) else { return nil }
-        return "\(start) – \(end)"
-    }
-
-    private func rowText(linked: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            timeLine(linked: linked, size: 22)
-            Text(entry.title)
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(theme.textPrimary)
-                .lineLimit(2)
-            if let show = entry.showTitle {
-                Text(show)
-                    .font(.system(size: 20))
-                    .foregroundStyle(theme.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-    }
-
-    private func currentText(linked: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            timeLine(linked: linked, size: 26)
-            Text(entry.title)
-                .font(.system(size: 36, weight: .bold))
-                .foregroundStyle(theme.textPrimary)
-                .lineLimit(2)
-            if let show = entry.showTitle {
-                Text(show)
-                    .font(.system(size: 24))
-                    .foregroundStyle(theme.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if let progress = entry.progress(at: now) {
-                ProgressBar(fraction: progress)
-            }
-        }
     }
 }
 
 /// The fixed sizes of a schedule row. A row's size depends only on whether it is the on-air
-/// row, never on its image or its text, so every row of the strip is the same size.
+/// row, never on its image or its text, so every row of the list is the same size.
 enum ScheduleRowMetrics {
-    static let padding: CGFloat = 24
-    static let spacing: CGFloat = 24
+    static let padding: CGFloat = 10
+    static let spacing: CGFloat = 12
 
     static func thumbnail(isCurrent: Bool) -> CGSize {
-        isCurrent ? CGSize(width: 384, height: 216) : CGSize(width: 192, height: 108)
+        isCurrent ? CGSize(width: 128, height: 72) : CGSize(width: 96, height: 54)
     }
 
-    /// Two title lines, the show line and the time line fit in the regular row.
-    static func text(isCurrent: Bool) -> CGSize {
-        isCurrent ? CGSize(width: 640, height: 216) : CGSize(width: 420, height: 132)
-    }
-
-    static func rowSize(isCurrent: Bool) -> CGSize {
-        let image = thumbnail(isCurrent: isCurrent)
-        let text = text(isCurrent: isCurrent)
-        return CGSize(width: image.width + spacing + text.width + padding * 2,
-                      height: max(image.height, text.height) + padding * 2)
+    /// Two title lines, the show line, and on the on-air row the badge and the progress fit.
+    static func rowHeight(isCurrent: Bool) -> CGFloat {
+        isCurrent ? 108 : 80
     }
 }
 
@@ -800,15 +701,14 @@ private struct ProgressBar: View {
                 Capsule().fill(theme.accent).frame(width: geometry.size.width * fraction)
             }
         }
-        .frame(height: 8)
+        .frame(height: 4)
         .accessibilityHidden(true)
     }
 }
 
-/// A card keeps Apple's focus engine: `Button` + `.buttonStyle(.card)` gives parallax,
-/// lift and hover for free. A press hands the item's type and id to the router, which
-/// resolves the Template Screen — the view never builds a route. An episode plays at once when
-/// it can (`AppRouter.select`, tap-to-play).
+/// A press hands the item's type and id to the router, which resolves the Template Screen — the
+/// view never builds a route. An episode plays at once when it can (`AppRouter.select`,
+/// tap-to-play).
 private struct CardButton: View {
     let card: CardModel
     let shape: CardShape
@@ -821,9 +721,11 @@ private struct CardButton: View {
         Button {
             router.select(card.target)
         } label: {
+            // The shape names the hit area: the blurred backdrop of fallback art takes no touches.
             MediaCard(card: card, shape: shape, width: width, titleLines: titleLines)
+                .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.card)
+        .buttonStyle(PressableCardStyle())
         .modifier(SelectionCue(target: card.target))
         .modifier(CardMenuModifier(menu: card.menu))
         .accessibilityLabel(card.accessibilityLabel(shape: shape))
@@ -922,15 +824,11 @@ struct WatchLaterButton: View {
 /// `/contains` for its one item when it shows.
 private struct WatchLaterToggle: View {
     let item: SavedItem
-    /// The block's first action asks for the default focus, as Go to show does.
-    var takesDefaultFocus = true
 
     @Environment(SavedItemList.self) private var watchLater
 
     var body: some View {
         WatchLaterButton(item: item, watchLater: watchLater)
-            .font(.system(size: 28, weight: .semibold))
-            .modifier(TakesDefaultFocus(enabled: takesDefaultFocus))
             .task(id: item.id) { await watchLater.check(item.itemType, item.itemId) }
     }
 }
@@ -939,8 +837,6 @@ private struct WatchLaterToggle: View {
 /// filled heart. A press toggles it. Signed in with no loaded list, it asks `/contains` when it shows.
 private struct LikeToggle: View {
     let item: SavedItem
-    /// The block's first action asks for the default focus.
-    var takesDefaultFocus = false
 
     @Environment(Likes.self) private var likes
 
@@ -949,8 +845,6 @@ private struct LikeToggle: View {
         Button(ChromeText.string(liked ? .liked : .like), systemImage: liked ? "heart.fill" : "heart") {
             Task { await likes.toggle(item) }
         }
-        .font(.system(size: 28, weight: .semibold))
-        .modifier(TakesDefaultFocus(enabled: takesDefaultFocus))
         .accessibilityIdentifier("like")
         .accessibilityValue(liked ? "liked" : "")
         .task(id: item.id) { await likes.list.check(item.itemType, item.itemId) }
@@ -985,17 +879,16 @@ private struct SelectionCue: ViewModifier {
     }
 }
 
-/// The full-screen hero of a `hero` shelf, like the app.hopetv.de home hero: 16:9 art across
-/// the whole stage, darkened on the leading side, with the item's logo (else its title), its
-/// abstract, a meta line, its categories and the actions on the left.
+/// The hero of a `hero` shelf, like the app.hopetv.de home hero: art across the whole screen, with
+/// the item's logo (else its title), its abstract, a meta line, its categories and the actions over
+/// the bottom of the art.
 ///
-/// It is not a lifted card: the buttons take focus. "Watch now" is the card press
-/// (`router.select`: served link first, and an episode plays at once when it can); "Trailer"
-/// draws only when the trailer resolves to a playable source and plays it full screen. Left on
-/// the first button and right on the last button page through the items. The hero also goes to
-/// the next item after `autoAdvanceInterval`. The art runs under the next shelf; a hero that leads
-/// the screen also draws its art up to the stage top. A show with a served preview fades to its
-/// muted loop (`HeroPreviewVideo`) while `HeroPreview.Gate` allows it.
+/// "Watch now" is the card press (`router.select`: served link first, and an episode plays at once
+/// when it can); "Trailer" draws only when the trailer resolves to a playable source and plays it
+/// full screen. A swipe pages through the items. The hero also goes to the next item after
+/// `autoAdvanceInterval`. A hero that leads the screen draws its art up under the status bar. A
+/// show with a served preview fades to its muted loop (`HeroPreviewVideo`) while `HeroPreview.Gate`
+/// allows it.
 private struct HeroShelfView: View {
     let model: ShelfModel
 
@@ -1007,7 +900,6 @@ private struct HeroShelfView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var index = 0
-    @FocusState private var focus: HeroModel.Action?
     /// Between `onAppear` and `onDisappear`. A covered NavigationStack root and an unselected tab
     /// still get changes, so the preview also checks that its screen is the one on show.
     @State private var appeared = false
@@ -1025,8 +917,9 @@ private struct HeroShelfView: View {
         let playing: Bool
     }
 
-    /// The text column. The rest of the stage is the art.
-    private let columnWidth: CGFloat = 900
+    private var stageWidth: CGFloat { Layout.phoneWidth }
+    private var height: CGFloat { Layout.heroHeight(width: stageWidth) }
+    private var columnWidth: CGFloat { stageWidth - 2 * Layout.screenMargin }
 
     private var card: CardModel { model.cards[min(index, model.cards.count - 1)] }
 
@@ -1037,11 +930,11 @@ private struct HeroShelfView: View {
         let bleed = leads ? leadingHero?.bleed ?? 0 : 0
         let shift = leads ? leadingHero?.shift ?? 0 : 0
 
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 10) {
             // Only an authored title draws, as a quiet overline above the logo.
             if let title = model.title {
                 Text(title)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(theme.accent)
                     .lineLimit(1)
             }
@@ -1051,9 +944,9 @@ private struct HeroShelfView: View {
             }
             if let abstract = hero?.abstract {
                 Text(abstract)
-                    .font(.system(size: 28))
+                    .font(.system(size: 14))
                     .foregroundStyle(theme.textPrimary.opacity(0.9))
-                    .lineLimit(3)
+                    .lineLimit(2)
             }
             if let hero, !hero.metaBeforeAbstract, !hero.metaParts.isEmpty {
                 HeroMetaLine(parts: hero.metaParts)
@@ -1061,19 +954,19 @@ private struct HeroShelfView: View {
             if let categories = hero?.categories, !categories.isEmpty, let separator = hero?.tagSeparator {
                 // `MovieHero` with `genresDisplay: "text"`: one line in the meta style, not chips.
                 Text(categories.joined(separator: separator))
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(theme.textSecondary)
                     .lineLimit(1)
             } else if let categories = hero?.categories, !categories.isEmpty {
-                OneLineRow(spacing: 12) {
+                OneLineRow(spacing: 8) {
                     ForEach(categories, id: \.self) { category in
                         Text(category)
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(theme.textPrimary)
                             .lineLimit(1)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .overlay(Capsule().strokeBorder(theme.textPrimary.opacity(0.6), lineWidth: 2))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .overlay(Capsule().strokeBorder(theme.textPrimary.opacity(0.6), lineWidth: 1))
                             .fixedSize()
                     }
                 }
@@ -1081,32 +974,33 @@ private struct HeroShelfView: View {
                 .clipped()
             }
             if let hero, let message = hero.cannotPlayMessage {
-                cannotPlay(message, focusable: hero.firstFocus == .message)
-                    .padding(.top, 8)
+                Text(message)
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.textSecondary)
+                    .accessibilityIdentifier("cannot-play")
             }
             if let hero, hero.hasActions {
                 actions(card: card, hero: hero)
-                    .padding(.top, 8)
             }
             if model.cards.count > 1 {
                 PageDots(count: model.cards.count, index: index)
+                    .frame(maxWidth: .infinity)
             }
         }
         .frame(width: columnWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: Layout.heroHeight, alignment: .bottomLeading)
+        .frame(height: height, alignment: .bottomLeading)
         .background(alignment: .top) {
-            art(card: card)
+            art(card: card, height: height + bleed)
                 .offset(x: shift, y: -bleed)
                 .allowsHitTesting(false)
         }
         .animation(.easeInOut(duration: 0.35), value: index)
-        .focusSection()
-        .modifier(DefaultFocusRequest { focus = hero?.firstFocus })
-        .onChange(of: index) { _, _ in
-            // The Trailer button goes away on an item that has none; focus stays in the hero.
-            if focus == .trailer, self.card.hero?.trailer == nil { focus = .watch }
-        }
+        .contentShape(Rectangle())
+        .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { drag in
+            guard abs(drag.translation.width) > max(abs(drag.translation.height), 40) else { return }
+            page(drag.translation.width < 0 ? 1 : -1)
+        })
         .task(id: AutoAdvance(index: index, playing: router.playback != nil)) {
             guard model.cards.count > 1, router.playback == nil else { return }
             guard (try? await Task.sleep(for: Self.autoAdvanceInterval)) != nil else { return }
@@ -1134,51 +1028,23 @@ private struct HeroShelfView: View {
                 .accessibilityLabel(card.title)
         } else {
             Text(card.title)
-                .font(theme.headingFont.map { .custom($0, size: 72) } ?? .system(size: 72, weight: .bold))
+                .font(theme.headingFont.map { .custom($0, size: 30) } ?? .system(size: 30, weight: .bold))
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(2)
         }
     }
 
-    /// The logo box: at most 800 x 220 pt, the file's own aspect when it carries its size.
+    /// The logo box: at most 260 x 90 pt, the file's own aspect when it carries its size.
     static func logoSize(aspect: CGFloat?) -> CGSize {
-        let box = CGSize(width: 800, height: 220)
+        let box = CGSize(width: 260, height: 90)
         guard let aspect, aspect > 0 else { return box }
         return box.width * aspect <= box.height
             ? CGSize(width: box.width, height: box.width * aspect)
             : CGSize(width: box.height / aspect, height: box.height)
     }
 
-    /// The "can't play" text where Watch now would be. With no button it is the hero's focus stop,
-    /// so Up from the block below scrolls back to the hero. Focus draws a quiet `surfaceSelected`
-    /// panel with no lift, as `ReadingPanel`: it is text, not a button.
-    private func cannotPlay(_ message: String, focusable: Bool) -> some View {
-        Text(message)
-            .font(.system(size: 26))
-            .foregroundStyle(theme.textSecondary)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(focus == .message ? theme.surfaceSelected : .clear, in: RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal, -20)
-            .padding(.vertical, -12)
-            .focusable(focusable)
-            .focusEffectDisabled()
-            .focused($focus, equals: .message)
-            .animation(.easeOut(duration: 0.15), value: focus)
-            .accessibilityIdentifier("cannot-play")
-    }
-
     private func actions(card: CardModel, hero: HeroModel) -> some View {
-        let buttons = hero.actions
-        // Left on the first button and Right on the last one page through the items.
-        let paging = { (action: HeroModel.Action, direction: MoveCommandDirection) in
-            if direction == .left, action == buttons.first {
-                page(-1)
-            } else if direction == .right, action == buttons.last {
-                page(1)
-            }
-        }
-        return HStack(spacing: 24) {
+        ActionRow {
             if let watchNow = hero.watchNow {
                 Button {
                     switch watchNow {
@@ -1188,10 +1054,9 @@ private struct HeroShelfView: View {
                 } label: {
                     Label(watchNow.label, systemImage: "play.fill")
                 }
+                .buttonStyle(ActionButtonStyle(prominent: true))
                 .modifier(SelectionCue(target: card.target))
                 .accessibilityIdentifier("watch-now")
-                .focused($focus, equals: .watch)
-                .onMoveCommand { paging(.watch, $0) }
             }
 
             if let trailer = hero.trailer {
@@ -1200,19 +1065,14 @@ private struct HeroShelfView: View {
                 } label: {
                     Label(hero.trailerLabel ?? ChromeText.string(.trailer), systemImage: "film")
                 }
-                .focused($focus, equals: .trailer)
-                .onMoveCommand { paging(.trailer, $0) }
             }
 
             if let item = hero.watchLater {
                 WatchLaterButton(item: item, watchLater: watchLater, label: hero.watchLaterLabel,
                                  savedLabel: hero.watchLaterSavedLabel)
-                    .focused($focus, equals: .watchLater)
-                    .onMoveCommand { paging(.watchLater, $0) }
                     .task(id: item.id) { await watchLater.check(item.itemType, item.itemId) }
             }
         }
-        .font(.system(size: 30, weight: .semibold))
     }
 
     private func page(_ delta: Int) {
@@ -1221,28 +1081,24 @@ private struct HeroShelfView: View {
         index = (index + delta + count) % count
     }
 
-    private func art(card: CardModel) -> some View {
+    private func art(card: CardModel, height: CGFloat) -> some View {
         ZStack {
-            HeroArt(card: card, width: Layout.stageWidth, height: Layout.stageHeight, fillsFromTop: true)
+            HeroArt(card: card, width: stageWidth, height: height, fillsFromTop: true)
                 .id(card.id)
                 .transition(.opacity)
             let gate = previewGate(card.hero)
             HeroPreviewVideo(index: index, key: card.id, url: gate.mayPlay ? card.hero?.previewURL : nil,
                              hold: gate.hold)
-            // The leading side goes dark for the text; the bottom fades into the next shelf.
+            // The top stays dark for the status bar; the bottom fades into the next shelf.
             LinearGradient(stops: [
-                .init(color: theme.background.opacity(0.95), location: 0),
-                .init(color: theme.background.opacity(0.7), location: 0.35),
-                .init(color: theme.background.opacity(0), location: 0.72),
-            ], startPoint: .leading, endPoint: .trailing)
-            LinearGradient(stops: [
-                .init(color: theme.background.opacity(0.55), location: 0),
-                .init(color: theme.background.opacity(0), location: 0.18),
-                .init(color: theme.background.opacity(0), location: 0.6),
+                .init(color: theme.background.opacity(0.45), location: 0),
+                .init(color: theme.background.opacity(0), location: 0.2),
+                .init(color: theme.background.opacity(0), location: 0.4),
+                .init(color: theme.background.opacity(0.75), location: 0.72),
                 .init(color: theme.background, location: 1),
             ], startPoint: .top, endPoint: .bottom)
         }
-        .frame(width: Layout.stageWidth, height: Layout.stageHeight)
+        .frame(width: stageWidth, height: height)
     }
 }
 
@@ -1256,7 +1112,7 @@ private struct HeroMetaLine: View {
 
     var body: some View {
         if parts.contains(where: { if case .badge = $0 { return true }; return false }) {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 ForEach(Array(Self.groups(parts).enumerated()), id: \.offset) { index, group in
                     if index > 0 { text("•") }
                     switch group {
@@ -1293,7 +1149,7 @@ private struct HeroMetaLine: View {
 
     private func text(_ value: String) -> some View {
         Text(value)
-            .font(.system(size: 24, weight: .medium))
+            .font(.system(size: Layout.text(24), weight: .medium))
             .foregroundStyle(theme.textSecondary)
             .lineLimit(1)
     }
@@ -1306,11 +1162,11 @@ private struct PageDots: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 6) {
             ForEach(0..<count, id: \.self) { dot in
                 Capsule()
                     .fill(dot == index ? theme.textPrimary : theme.textPrimary.opacity(0.35))
-                    .frame(width: dot == index ? 36 : 12, height: 12)
+                    .frame(width: dot == index ? 18 : 6, height: 6)
             }
         }
         .accessibilityHidden(true)
@@ -1356,15 +1212,14 @@ private struct SeasonChips: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 20) {
+            HStack(spacing: 8) {
                 chip(ChromeText.string(.allSeasons), id: nil)
                 ForEach(seasons) { season in chip(season.title, id: season.id) }
             }
             .padding(.horizontal, Layout.screenMargin)
-            .padding(.vertical, 16)
+            .padding(.vertical, 4)
         }
         .padding(.horizontal, -Layout.screenMargin)
-        .focusSection()
     }
 
     private func chip(_ title: String, id: String?) -> some View {
@@ -1388,20 +1243,19 @@ private struct ChipFace<Label: View>: View {
     let pressed: Bool
     let selected: Bool
 
-    @Environment(\.isFocused) private var focused
     @Environment(\.appTheme) private var theme
 
     var body: some View {
         label
-            .font(.system(size: 24, weight: .semibold))
+            .font(.system(size: 14, weight: .semibold))
             .lineLimit(1)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 12)
-            .foregroundStyle(focused ? Color.black : theme.textPrimary)
-            .background(focused ? Color.white : (selected ? theme.accent : theme.surface), in: Capsule())
-            .scaleEffect(focused ? 1.08 : (pressed ? 0.96 : 1))
-            .shadow(color: .black.opacity(focused ? 0.4 : 0), radius: 12, y: 6)
-            .animation(.easeOut(duration: 0.15), value: focused)
+            .padding(.horizontal, 16)
+            .frame(minHeight: 36)
+            .foregroundStyle(selected ? theme.background : theme.textPrimary)
+            .background(selected ? theme.accent : theme.surface, in: Capsule())
+            .contentShape(Capsule())
+            .scaleEffect(pressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.12), value: pressed)
     }
 }
 
@@ -1409,68 +1263,36 @@ private struct ScheduleView: View {
     let model: ScheduleModel
 
     @Environment(\.appTheme) private var theme
-    /// The focused row's id. It drives the title-only row's highlight.
-    @FocusState private var focusedRow: String?
     /// The local clock. It moves every `ScheduleRefresh.interval`, with no network call.
     @State private var now = Date()
-    /// The last row that had focus while the strip had it. When that row goes away (it ended, or
-    /// a refresh dropped it), focus moves to the nearest row instead of the top of the screen.
-    @State private var lastFocusedRow: String?
     #if DEBUG
     @Environment(AppRouter.self) private var router
-    @Environment(\.debugScreen) private var debugScreen
     #endif
 
     var body: some View {
         let rows = model.entries(at: now)
 
-        VStack(alignment: .leading, spacing: 18) {
-            Text(model.title)
-                .font(.system(size: 38, weight: .semibold))
-                .foregroundStyle(theme.textPrimary)
+        VStack(alignment: .leading, spacing: 12) {
+            ShelfHeading(title: model.title)
 
             if rows.isEmpty {
                 Text(model.emptyMessage ?? ChromeText.string(.noSchedule))
-                    .font(.system(size: 26))
+                    .font(.system(size: Layout.text(26)))
                     .foregroundStyle(theme.textSecondary)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 32) {
-                        ForEach(rows) { entry in ScheduleRow(entry: entry, now: now, focus: $focusedRow) }
-                    }
-                    .padding(.horizontal, Layout.screenMargin)
-                    .padding(.vertical, Layout.focusGrowth)
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(rows) { entry in ScheduleRow(entry: entry, now: now) }
                 }
-                .padding(.horizontal, -Layout.screenMargin)
             }
         }
-        .focusSection()
-        .modifier(DefaultFocusRequest { focusedRow = model.entries(at: Date()).first?.id })
-        .onChange(of: focusedRow) { _, id in
-            if let id {
-                lastFocusedRow = id
-            } else if let last = lastFocusedRow, model.entries(at: now).contains(where: { $0.id == last }) {
-                // The row is still there, so the viewer moved focus out of the strip.
-                lastFocusedRow = nil
-            }
-        }
-        .onChange(of: rows.map(\.id)) { old, new in
-            guard let last = lastFocusedRow,
-                  let next = ScheduleFocus.replacement(for: last, old: old, new: new) else { return }
-            lastFocusedRow = next
-            focusedRow = next
-        }
-        // Canceled with the view, so no timer outlives the strip. It restarts when the strip
+        // Canceled with the view, so no timer outlives the list. It restarts when the list
         // shows again (Back, a tab switch) and takes the time at once, so ended rows never draw.
         .task {
             await ScheduleClock.run { now = $0 }
         }
         #if DEBUG
         .task {
-            if let id = await DebugLaunch.focusScheduleRow(in: model.entries(at: Date()), screen: debugScreen, router: router) {
-                focusedRow = id
-                DebugLaunch.pressLiveNow(in: model.entries(at: Date()), router: router)
-            }
+            DebugLaunch.pressLiveNow(in: model.entries(at: Date()), router: router)
         }
         #endif
     }
@@ -1492,18 +1314,6 @@ enum ScheduleRefresh {
             do { try await sleep(interval) } catch { return }
             await action()
         }
-    }
-}
-
-/// Where focus goes when the focused schedule row goes away. Pure, so the rule is testable.
-enum ScheduleFocus {
-    /// The row now at the removed row's position, else the last row. nil when the row is still
-    /// there, was not in the old list, or no row is left.
-    static func replacement(for id: String, old: [String], new: [String]) -> String? {
-        guard !new.contains(id), let index = old.firstIndex(of: id), !new.isEmpty else { return nil }
-        // Rows before it that also went away shift the position left.
-        let removedBefore = old[..<index].filter { !new.contains($0) }.count
-        return new[min(index - removedBefore, new.count - 1)]
     }
 }
 
@@ -1529,88 +1339,75 @@ private struct ShowDetailBlockView: View {
     @Environment(AppRouter.self) private var router
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 16) {
             // The block's own `title` prop, as the web draws it above the block.
             if let heading = model.heading {
-                Text(heading)
-                    .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(theme.textPrimary)
+                ShelfHeading(title: heading)
             }
-            HStack(alignment: .top, spacing: 48) {
-                if let url = model.imageURL {
-                    RemoteImage(url: url, blurhash: model.blurhash)
-                        .frame(width: 720, height: 405)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                DetailColumn(
-                    hasLead: model.title != nil,
-                    hasAction: model.trailer != nil || model.watchLater != nil || model.like != nil,
-                    hasText: model.abstract != nil || !model.paragraphs.isEmpty,
-                    leadText: [model.title, model.subtitle, model.ageRating, model.videoQuality, languageText, model.genres]
-                        .compactMap { $0 }.joined(separator: "\n"),
-                    bodyText: ([model.abstract].compactMap { $0 } + model.paragraphs).joined(separator: "\n")
-                ) {
-                    if let title = model.title {
-                        VStack(alignment: .leading, spacing: 24) {
-                            Text(title)
-                                .font(.system(size: 60, weight: .bold))
-                                .foregroundStyle(theme.textPrimary)
-                            // Served only by an App whose Show carries one; absent draws no line.
-                            if let subtitle = model.subtitle {
-                                Text(subtitle)
-                                    .font(.system(size: 34, weight: .medium))
-                                    .foregroundStyle(theme.accent)
-                            }
-                            // `MovieDetail` adds the quality badge, the language and the genres (awe#6870).
-                            if model.ageRating != nil || model.videoQuality != nil || model.language != nil
-                                || model.genres != nil {
-                                HStack(spacing: 20) {
-                                    if let ageRating = model.ageRating {
-                                        AgeRatingBadge(label: ageRating)
-                                    }
-                                    if let quality = model.videoQuality {
-                                        AgeRatingBadge(label: quality)
-                                    }
-                                    if let language = model.language {
-                                        Text(language)
-                                            .font(.system(size: 24, weight: .medium))
-                                            .foregroundStyle(theme.textSecondary)
-                                            .accessibilityLabel(languageText ?? language)
-                                    }
-                                    if let genres = model.genres {
-                                        Text(genres)
-                                            .font(.system(size: 24, weight: .medium))
-                                            .foregroundStyle(theme.textSecondary)
-                                            .lineLimit(1)
-                                    }
+            if let url = model.imageURL {
+                DetailImage(url: url, blurhash: model.blurhash)
+            }
+            DetailColumn(
+                hasLead: model.title != nil,
+                hasAction: model.trailer != nil || model.watchLater != nil || model.like != nil,
+                hasText: model.abstract != nil || !model.paragraphs.isEmpty
+            ) {
+                if let title = model.title {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(title)
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(theme.textPrimary)
+                        // Served only by an App whose Show carries one; absent draws no line.
+                        if let subtitle = model.subtitle {
+                            Text(subtitle)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(theme.accent)
+                        }
+                        // `MovieDetail` adds the quality badge, the language and the genres (awe#6870).
+                        if model.ageRating != nil || model.videoQuality != nil || model.language != nil
+                            || model.genres != nil {
+                            HStack(spacing: 10) {
+                                if let ageRating = model.ageRating {
+                                    AgeRatingBadge(label: ageRating)
+                                }
+                                if let quality = model.videoQuality {
+                                    AgeRatingBadge(label: quality)
+                                }
+                                if let language = model.language {
+                                    Text(language)
+                                        .font(.system(size: Layout.text(24), weight: .medium))
+                                        .foregroundStyle(theme.textSecondary)
+                                        .accessibilityLabel(languageText ?? language)
+                                }
+                                if let genres = model.genres {
+                                    Text(genres)
+                                        .font(.system(size: Layout.text(24), weight: .medium))
+                                        .foregroundStyle(theme.textSecondary)
+                                        .lineLimit(1)
                                 }
                             }
                         }
                     }
-                } action: {
-                    HStack(spacing: 24) {
-                        if let trailer = model.trailer {
-                            Button {
-                                router.play(trailer)
-                            } label: {
-                                Label(ChromeText.string(.watchTrailer), systemImage: "film")
-                            }
-                            .font(.system(size: 30, weight: .semibold))
-                            .modifier(TakesDefaultFocus())
-                            .accessibilityIdentifier("watch-trailer")
-                        }
-                        if let item = model.watchLater {
-                            WatchLaterToggle(item: item, takesDefaultFocus: model.trailer == nil)
-                        }
-                        if let item = model.like {
-                            LikeToggle(item: item, takesDefaultFocus: model.trailer == nil && model.watchLater == nil)
-                        }
-                    }
-                } text: {
-                    DetailText(abstract: model.abstract, paragraphs: model.paragraphs)
                 }
-                // Beside the image the column is narrower; alone it takes the reading width.
-                .frame(maxWidth: model.imageURL == nil ? 1200 : 900, alignment: .leading)
+            } action: {
+                ActionRow {
+                    if let trailer = model.trailer {
+                        Button {
+                            router.play(trailer)
+                        } label: {
+                            Label(ChromeText.string(.watchTrailer), systemImage: "film")
+                        }
+                        .accessibilityIdentifier("watch-trailer")
+                    }
+                    if let item = model.watchLater {
+                        WatchLaterToggle(item: item)
+                    }
+                    if let item = model.like {
+                        LikeToggle(item: item)
+                    }
+                }
+            } text: {
+                DetailText(abstract: model.abstract, paragraphs: model.paragraphs)
             }
         }
     }
@@ -1618,6 +1415,21 @@ private struct ShowDetailBlockView: View {
     /// What VoiceOver reads for the language: "Language: Deutsch", as on `EpisodeDetail`.
     private var languageText: String? {
         model.language.map { "\(ChromeText.string(.languageLabel)): \($0)" }
+    }
+}
+
+/// A detail block's 16:9 image, as wide as the column. The art fills an overlay, so it never
+/// sizes the block.
+private struct DetailImage: View {
+    let url: URL?
+    let blurhash: String?
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay { RemoteImage(url: url, blurhash: blurhash) }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -1635,31 +1447,27 @@ private struct EpisodeDetailBlockView: View {
         DetailColumn(
             hasLead: model.showTitle != nil || model.title != nil || model.views != nil,
             hasAction: showTarget != nil || model.watchLater != nil || model.like != nil,
-            hasText: model.abstract != nil || !model.paragraphs.isEmpty,
-            leadText: [model.showTitle, model.title, model.ageRating, languageText,
-                       model.views.map { ChromeText.count(.viewsCount, $0, formatted: $0.formatted()) }]
-                .compactMap { $0 }.joined(separator: "\n"),
-            bodyText: ([model.abstract].compactMap { $0 } + model.paragraphs).joined(separator: "\n")
+            hasText: model.abstract != nil || !model.paragraphs.isEmpty
         ) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
                 if let showTitle = model.showTitle {
-                    Text(showTitle)
-                        .font(.system(size: 30, weight: .semibold))
+                    Text(showTitle.uppercased())
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(theme.accent)
                 }
                 if let title = model.title {
                     Text(title)
-                        .font(.system(size: 60, weight: .bold))
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(theme.textPrimary)
                 }
                 if model.ageRating != nil || model.language != nil {
-                    HStack(spacing: 20) {
+                    HStack(spacing: 10) {
                         if let ageRating = model.ageRating {
                             AgeRatingBadge(label: ageRating)
                         }
                         if let language = model.language {
                             Text(language)
-                                .font(.system(size: 24, weight: .medium))
+                                .font(.system(size: Layout.text(24), weight: .medium))
                                 .foregroundStyle(theme.textSecondary)
                                 .accessibilityLabel(languageText ?? language)
                         }
@@ -1667,33 +1475,30 @@ private struct EpisodeDetailBlockView: View {
                 }
                 if let views = model.views {
                     Text(ChromeText.count(.viewsCount, views, formatted: views.formatted()))
-                        .font(.system(size: 24))
+                        .font(.system(size: Layout.text(24)))
                         .foregroundStyle(theme.textSecondary)
                 }
             }
         } action: {
-            HStack(spacing: 24) {
+            ActionRow {
                 if let target = showTarget {
                     Button {
                         router.openCard(target)
                     } label: {
                         Label(ChromeText.string(.goToShow), systemImage: "rectangle.stack")
                     }
-                    .font(.system(size: 28, weight: .semibold))
-                    .modifier(TakesDefaultFocus())
                     .accessibilityIdentifier("go-to-show")
                 }
                 if let item = model.watchLater {
-                    WatchLaterToggle(item: item, takesDefaultFocus: showTarget == nil)
+                    WatchLaterToggle(item: item)
                 }
                 if let item = model.like {
-                    LikeToggle(item: item, takesDefaultFocus: showTarget == nil && model.watchLater == nil)
+                    LikeToggle(item: item)
                 }
             }
         } text: {
             DetailText(abstract: model.abstract, paragraphs: model.paragraphs)
         }
-        .frame(maxWidth: 1200, alignment: .leading)
     }
 
     /// What VoiceOver reads for the language: "Language: Deutsch". The screen draws the label alone.
@@ -1702,38 +1507,33 @@ private struct EpisodeDetailBlockView: View {
     }
 }
 
-/// `ShowMeta`: label / value rows, like the app.hopetv.de show page. One focus stop.
+/// `ShowMeta`: label / value rows, like the app.hopetv.de show page.
 private struct ShowMetaBlockView: View {
     let model: ShowMetaModel
 
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        ReadingPanel(accessibilityText: model.rows.map { "\($0.label): \($0.spokenValue ?? $0.value)" }.joined(separator: "\n")) {
-            Grid(alignment: .topLeading, horizontalSpacing: 32, verticalSpacing: 14) {
-                ForEach(Array(model.rows.enumerated()), id: \.offset) { _, row in
-                    GridRow {
-                        Text(row.label)
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(theme.textPrimary)
-                            .frame(width: 260, alignment: .leading)
-                        Text(row.value)
-                            .font(.system(size: 28))
-                            .foregroundStyle(theme.textSecondary)
-                    }
+        Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 8) {
+            ForEach(Array(model.rows.enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    Text(row.label)
+                        .font(.system(size: Layout.text(28), weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
+                        .frame(width: 100, alignment: .leading)
+                    Text(row.value)
+                        .font(.system(size: Layout.text(28)))
+                        .foregroundStyle(theme.textSecondary)
+                        .accessibilityLabel(row.spokenValue ?? row.value)
                 }
+                .accessibilityElement(children: .combine)
             }
         }
-        .frame(maxWidth: 1200, alignment: .leading)
     }
 }
 
 /// A detail block's text column: the lead (the heading group), an optional action button, and
 /// the text.
-///
-/// Reading focus is one stop per text block. With no button the lead and the text are ONE
-/// `ReadingPanel`. With a button the lead stays plain above it, and the text below is the panel,
-/// so the button sits under the heading group; that panel is a stop only when it scrolls.
 private struct DetailColumn<Lead: View, Action: View, Body: View>: View {
     let hasLead: Bool
     let hasAction: Bool
@@ -1742,16 +1542,10 @@ private struct DetailColumn<Lead: View, Action: View, Body: View>: View {
     let action: Action
     let text: Body
 
-    /// What VoiceOver reads for the lead and for the text, when a panel holds them.
-    let leadText: String
-    let bodyText: String
-
     init(
         hasLead: Bool,
         hasAction: Bool,
         hasText: Bool,
-        leadText: String,
-        bodyText: String,
         @ViewBuilder lead: () -> Lead,
         @ViewBuilder action: () -> Action,
         @ViewBuilder text: () -> Body
@@ -1759,31 +1553,18 @@ private struct DetailColumn<Lead: View, Action: View, Body: View>: View {
         self.hasLead = hasLead
         self.hasAction = hasAction
         self.hasText = hasText
-        self.leadText = leadText
-        self.bodyText = bodyText
         self.lead = lead()
         self.action = action()
         self.text = text()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            if hasAction {
-                if hasLead { lead }
-                action
-                // The button above already brings short text into view, so the text is a stop
-                // only when it must scroll: no dead stop between the button and the next block.
-                if hasText { ReadingPanel(focusableWhenShort: false, accessibilityText: bodyText) { text } }
-            } else if hasLead || hasText {
-                ReadingPanel(accessibilityText: [hasLead ? leadText : "", hasText ? bodyText : ""]
-                    .filter { !$0.isEmpty }.joined(separator: "\n")) {
-                    VStack(alignment: .leading, spacing: 24) {
-                        if hasLead { lead }
-                        if hasText { text }
-                    }
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            if hasLead { lead }
+            if hasAction { action }
+            if hasText { text }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1795,215 +1576,23 @@ private struct DetailText: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 12) {
             if let abstract {
                 Text(abstract)
-                    .font(.system(size: 28))
+                    .font(.system(size: Layout.text(28)))
                     .foregroundStyle(theme.textSecondary)
             }
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
                 Text(paragraph)
-                    .font(.system(size: 28))
+                    .font(.system(size: Layout.text(28)))
                     .foregroundStyle(theme.textSecondary)
             }
-        }
-    }
-}
-
-/// One focus stop for a block's whole text column, for text a viewer reads, not presses.
-///
-/// A tvOS ScrollView scrolls only to bring the focused view into view, so text with no focus
-/// stop can never be read. Focus draws a quiet `surfaceSelected` panel, with no lift and no
-/// shadow, so it never reads as a button. The negative margins take the panel's padding back
-/// out, so the unfocused layout is exactly the plain text.
-///
-/// Text taller than `maxHeight` draws in a bounded panel that fades at a clipped edge. While it
-/// has focus, Up and Down scroll it by a third of the panel; at the top or the bottom edge the
-/// move leaves the panel as usual. Short text has no panel: Up and Down leave at once.
-struct ReadingPanel<Content: View>: View {
-    var maxHeight: CGFloat = ReadingScroll.maxHeight
-    /// False: text that fits takes no focus (a button right above it is the stop).
-    var focusableWhenShort = true
-    /// What VoiceOver reads when the panel has focus. tvOS VoiceOver follows focus, so a focused
-    /// panel reads its text; the drawn text is then hidden from it, so nothing reads twice.
-    var accessibilityText = ""
-    @ViewBuilder let content: Content
-
-    @Environment(\.appTheme) private var theme
-    @State private var focused = false
-    @State private var contentHeight: CGFloat = 0
-    @State private var offset: CGFloat = 0
-
-    var body: some View {
-        let scroll = ReadingScroll(contentHeight: contentHeight, maxHeight: maxHeight)
-        let focusable = focusableWhenShort || scroll.scrolls
-
-        content
-            .accessibilityHidden(focusable && !accessibilityText.isEmpty)
-            .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                contentHeight = height
-                offset = ReadingScroll(contentHeight: height, maxHeight: maxHeight).clamp(offset)
-            }
-            .offset(y: -offset)
-            .frame(maxWidth: .infinity, maxHeight: scroll.scrolls ? maxHeight : nil, alignment: .topLeading)
-            .clipped()
-            .mask { fade(scroll) }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(focused ? theme.surfaceSelected : .clear, in: RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal, -20)
-            .padding(.vertical, -12)
-            .background {
-                FocusCatcher(focused: $focused, enabled: focusable, label: accessibilityText) { down in
-                    let current = ReadingScroll(contentHeight: contentHeight, maxHeight: maxHeight)
-                    guard let next = current.step(from: offset, down: down) else { return false }
-                    withAnimation(.easeOut(duration: 0.25)) { offset = next }
-                    return true
-                }
-            }
-            .animation(.easeOut(duration: 0.15), value: focused)
-    }
-
-    /// A soft edge where text is clipped, so the viewer sees there is more.
-    @ViewBuilder
-    private func fade(_ scroll: ReadingScroll) -> some View {
-        if scroll.scrolls {
-            VStack(spacing: 0) {
-                LinearGradient(colors: [offset > 0 ? .clear : .black, .black], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 64)
-                Color.black
-                LinearGradient(colors: [.black, offset < scroll.overflow ? .clear : .black], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 64)
-            }
-        } else {
-            Color.black
-        }
-    }
-}
-
-/// The scroll arithmetic of a `ReadingPanel`. Pure, so the rule is testable.
-struct ReadingScroll: Equatable {
-    /// The tallest a text panel draws before it scrolls.
-    static let maxHeight: CGFloat = 620
-
-    let contentHeight: CGFloat
-    let maxHeight: CGFloat
-
-    var overflow: CGFloat { max(contentHeight - maxHeight, 0) }
-    var scrolls: Bool { overflow > 0.5 }
-    /// One press moves a third of the panel.
-    var stepSize: CGFloat { maxHeight / 3 }
-
-    func clamp(_ offset: CGFloat) -> CGFloat { min(max(offset, 0), overflow) }
-
-    /// The next offset for one press, or nil when there is nothing more to scroll that way —
-    /// then focus leaves the panel.
-    func step(from offset: CGFloat, down: Bool) -> CGFloat? {
-        if down {
-            guard offset < overflow - 0.5 else { return nil }
-            return clamp(offset + stepSize)
-        }
-        guard offset > 0.5 else { return nil }
-        return clamp(offset - stepSize)
-    }
-}
-
-/// The focusable surface under a `ReadingPanel`.
-///
-/// SwiftUI has no way to keep focus in a view while it still has text to scroll: the focus
-/// engine moves to the next focusable before `onMoveCommand` sees the press. This UIKit view
-/// asks first. It refuses a vertical focus move (`shouldUpdateFocus`) or takes an arrow press
-/// (`pressesBegan`) while `onMove` still scrolls, and lets the move through when it does not.
-private struct FocusCatcher: UIViewRepresentable {
-    @Binding var focused: Bool
-    /// False: the view takes no focus.
-    var enabled = true
-    /// What VoiceOver reads while it has focus.
-    var label = ""
-    /// `true` is down. Answers true when it scrolled, so the move must not leave.
-    let onMove: (Bool) -> Bool
-
-    func makeUIView(context: Context) -> CatcherView { CatcherView() }
-
-    func updateUIView(_ view: CatcherView, context: Context) {
-        view.onMove = onMove
-        view.onFocus = { focused = $0 }
-        view.enabled = enabled
-        // An accessibility element in every build, so VoiceOver reads the focused panel.
-        view.isAccessibilityElement = enabled && !label.isEmpty
-        view.accessibilityLabel = label
-        #if DEBUG
-        // The UI tests find a focusable panel by this id (`HopeTVUITests`).
-        view.accessibilityIdentifier = enabled ? "reading-panel" : nil
-        #endif
-    }
-
-    final class CatcherView: UIView {
-        var onMove: ((Bool) -> Bool)?
-        var onFocus: ((Bool) -> Void)?
-        var enabled = true
-        /// Arrow presses this view took, so their end and cancel events stay here too.
-        private var taken = Set<UIPress.PressType>()
-        /// A press and a focus move can report the same gesture; only the first one scrolls.
-        private var lastStep = Date.distantPast
-
-        override var canBecomeFocused: Bool { enabled }
-
-        override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
-            guard context.previouslyFocusedItem === self else { return true }
-            let heading = context.focusHeading
-            guard heading.contains(.down) || heading.contains(.up) else { return true }
-            if Date().timeIntervalSince(lastStep) < 0.2 { return false }
-            return !scroll(down: heading.contains(.down))
-        }
-
-        override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
-            if context.nextFocusedItem === self {
-                onFocus?(true)
-            } else if context.previouslyFocusedItem === self {
-                onFocus?(false)
-            }
-        }
-
-        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            var rest = Set<UIPress>()
-            for press in presses {
-                if isFocused, press.type == .downArrow || press.type == .upArrow, scroll(down: press.type == .downArrow) {
-                    taken.insert(press.type)
-                } else {
-                    rest.insert(press)
-                }
-            }
-            if !rest.isEmpty { super.pressesBegan(rest, with: event) }
-        }
-
-        override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            let rest = release(presses)
-            if !rest.isEmpty { super.pressesEnded(rest, with: event) }
-        }
-
-        override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            let rest = release(presses)
-            if !rest.isEmpty { super.pressesCancelled(rest, with: event) }
-        }
-
-        private func release(_ presses: Set<UIPress>) -> Set<UIPress> {
-            presses.filter { taken.remove($0.type) == nil }
-        }
-
-        private func scroll(down: Bool) -> Bool {
-            guard onMove?(down) == true else { return false }
-            lastStep = Date()
-            return true
         }
     }
 }
 
 /// An episode's poster and one action. Nothing plays here (ruled 2026-09-23): Select opens the
 /// full-screen `PlayerView`, the only place that seeks to a resume point and writes progress.
-/// The poster is 720 x 405, the size of the `ShowDetail` image, so the block fits beside an
-/// `EpisodeDetail` in a `direction: x` Container.
 private struct PlayActionView: View {
     let model: PlayActionModel
 
@@ -2011,10 +1600,8 @@ private struct PlayActionView: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            RemoteImage(url: model.posterURL, blurhash: nil)
-                .frame(width: 720, height: 405)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+        VStack(alignment: .leading, spacing: 14) {
+            DetailImage(url: model.posterURL, blurhash: nil)
 
             if let request = model.request {
                 Button {
@@ -2022,77 +1609,14 @@ private struct PlayActionView: View {
                 } label: {
                     Label(model.label ?? ChromeText.string(.play), systemImage: "play.fill")
                 }
-                .font(.system(size: 30, weight: .semibold))
-                .modifier(TakesDefaultFocus())
+                .buttonStyle(ActionButtonStyle(prominent: true))
                 .accessibilityIdentifier("play-action")
             } else if let message = model.message {
                 Text(message)
-                    .font(.system(size: 26))
+                    .font(.system(size: Layout.text(26)))
                     .foregroundStyle(theme.textSecondary)
-                    .frame(width: 720, alignment: .leading)
             }
         }
-        .focusSection()
-    }
-}
-
-/// The first action of a pushed screen takes focus once, when the screen first draws.
-///
-/// tvOS focuses the item nearest the top-left corner, so a Show screen opened on its first
-/// episode card and scrolled the show header away. `prefersDefaultFocus` is not read inside
-/// the screen's ScrollView, so the block's first action asks for focus itself. Once per view:
-/// Back to this screen, or a refetched copy, keeps the focus where the viewer left it.
-private struct TakesDefaultFocus: ViewModifier {
-    var enabled = true
-
-    @FocusState private var focused: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .focused($focused)
-            .modifier(DefaultFocusRequest(enabled: enabled) { focused = true })
-    }
-}
-
-/// The request itself, for a block that moves focus through its own `@FocusState` (the hero,
-/// the schedule strip, the person row). It runs `focus` once, when its block is the screen's default.
-struct DefaultFocusRequest: ViewModifier {
-    var enabled = true
-    let focus: () -> Void
-
-    @Environment(\.isDefaultFocusBlock) private var isDefault
-    @State private var requested = false
-
-    func body(content: Content) -> some View {
-        content.task(id: isDefault && enabled) {
-            guard isDefault && enabled, !requested else { return }
-            // One layout pass first, so the focusable exists for the focus engine.
-            guard (try? await Task.sleep(for: .milliseconds(150))) != nil else { return }
-            requested = true
-            focus()
-        }
-    }
-}
-
-/// The node id of the block that takes the default focus. Set on a pushed Screen and on the bare
-/// entry (`AppRouter.takesDefaultFocus`). On a tab root, focus stays in the tab bar.
-private struct DefaultFocusNodeKey: EnvironmentKey {
-    static let defaultValue: String? = nil
-}
-
-private struct IsDefaultFocusBlockKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    var defaultFocusNodeId: String? {
-        get { self[DefaultFocusNodeKey.self] }
-        set { self[DefaultFocusNodeKey.self] = newValue }
-    }
-
-    fileprivate var isDefaultFocusBlock: Bool {
-        get { self[IsDefaultFocusBlockKey.self] }
-        set { self[IsDefaultFocusBlockKey.self] = newValue }
     }
 }
 
@@ -2105,19 +1629,6 @@ extension EnvironmentValues {
     var stackEntry: StackEntry? {
         get { self[StackEntryKey.self] }
         set { self[StackEntryKey.self] = newValue }
-    }
-}
-
-/// How far the screen content starts below the stage top: the top safe area (overscan and the
-/// tab bar) plus `ScreenBody`'s padding. 0 until measured.
-private struct ScreenContentTopKey: EnvironmentKey {
-    static let defaultValue: CGFloat? = nil
-}
-
-extension EnvironmentValues {
-    var screenContentTop: CGFloat? {
-        get { self[ScreenContentTopKey.self] }
-        set { self[ScreenContentTopKey.self] = newValue }
     }
 }
 
@@ -2153,14 +1664,13 @@ extension EnvironmentValues {
 
 /// The Live card: the on-air broadcast's image, a play button and its title. Nothing plays
 /// inline. Select opens the stream full screen through `router.play`, the path the on-air
-/// schedule row uses (awe#5044). `ScheduleClock` moves the on-air broadcast, as on the strip.
+/// schedule row uses (awe#5044). `ScheduleClock` moves the on-air broadcast, as on the list.
 /// No broadcast on air (or none served): the dark card and the play button only.
 private struct LiveCardView: View {
     let model: PlayerModel
 
     @Environment(AppRouter.self) private var router
     @Environment(\.appTheme) private var theme
-    @Environment(\.screenContentTop) private var contentTop
     @State private var now = Date()
 
     var body: some View {
@@ -2168,11 +1678,10 @@ private struct LiveCardView: View {
         Button {
             router.play(model.request)
         } label: {
-            // 16:9, as wide as fits (`InlineCardSize`), centered in the content column. The art
-            // fills an overlay, so it never sizes the card.
+            // 16:9, as wide as the column. The art fills an overlay, so it never sizes the card.
             Color.black
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                .frame(maxWidth: InlineCardSize.maxWidth(contentTop: contentTop))
+                .frame(maxWidth: .infinity)
                 .overlay {
                     if let onAir {
                         RemoteImage(url: onAir.imageURL, blurhash: onAir.blurhash)
@@ -2184,10 +1693,9 @@ private struct LiveCardView: View {
                 .overlay(alignment: .bottomLeading) {
                     if let onAir { caption(onAir) }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.card)
-        .frame(maxWidth: .infinity)
-        .modifier(TakesDefaultFocus())
+        .buttonStyle(PressableCardStyle())
         .accessibilityLabel(ChromeText.string(.watchFullScreen))
         .accessibilityValue(onAir?.title ?? "")
         .accessibilityIdentifier("live-player")
@@ -2199,81 +1707,49 @@ private struct LiveCardView: View {
 
     private var playGlyph: some View {
         Image(systemName: "play.fill")
-            .font(.system(size: 64, weight: .bold))
+            .font(.system(size: 26, weight: .bold))
             .foregroundStyle(.white)
-            .frame(width: 140, height: 140)
+            .frame(width: 64, height: 64)
             .background(.black.opacity(0.55), in: Circle())
     }
 
     /// "Now", then the broadcast title and its show, as the on-air schedule row says them.
     private func caption(_ entry: ScheduleModel.Entry) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(ChromeText.string(.now))
-                .font(.system(size: 26, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(theme.accent)
             Text(entry.title)
-                .font(.system(size: 40, weight: .bold))
+                .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(.white)
             if let show = entry.showTitle {
                 Text(show)
-                    .font(.system(size: 28))
+                    .font(.system(size: 13))
                     .foregroundStyle(.white.opacity(0.8))
             }
         }
         .lineLimit(1)
-        .padding(40)
+        .padding(12)
     }
 }
 
-/// How big the Live card may draw. Pure, so the rule is testable.
-///
-/// Up from the top focusable reaches the tab bar only when the focused item fits on the stage
-/// with the content scrolled to its top. A full-width card (1632 x 918 pt, about 1010 pt lifted)
-/// did not fit under the tab bar, so tvOS kept the content scrolled and Up went nowhere.
-enum InlineCardSize {
-    /// `.buttonStyle(.card)` grows a focused card by about a tenth.
-    static let focusScale: CGFloat = 1.1
-    /// Room kept under the lifted card at the stage bottom.
-    static let bottomMargin: CGFloat = 60
-
-    /// The content top before the first measure: the tvOS tab-bar layout (safe area 140 +
-    /// padding 60, measured on the tvOS simulator). With it the first layout already has the
-    /// measured size, so the card does not jump.
-    static let assumedContentTop: CGFloat = 200
-    /// Never smaller than this, even for an odd safe area.
-    static let minWidth: CGFloat = 640
-
-    /// The widest 16:9 card whose lifted height fits between the content top and the stage
-    /// bottom. `contentTop` is the stage-to-content distance (safe area + screen padding); nil
-    /// until measured.
-    static func maxWidth(contentTop: CGFloat?) -> CGFloat {
-        let height = (Layout.stageHeight - (contentTop ?? assumedContentTop) - bottomMargin) / focusScale
-        return max(height * 16.0 / 9.0, minWidth)
-    }
-}
-
-/// The columns of a card grid in a given width. Four 392 pt cards fit inside the screen margins,
-/// so a grid card is narrower than the same card on a shelf. A narrower grid (the search results
-/// beside the grid keyboard) takes as many columns as fit at 360 pt or more, at least one, and
-/// shares the width out. An unmeasured width draws four 392 pt columns.
-///
-/// A poster grid (`MovieList`, awe#6870) uses `Metrics.poster`: up to six 260 pt portrait columns,
-/// at least 230 pt, so a tab's measured 1632 pt still takes six (238 pt). Every other grid uses
-/// the default `Metrics.wide`.
+/// The columns of a card grid in a given width: 2 under a 430 pt phone, 3 above. A poster grid
+/// (`MovieList`, awe#6870) uses `Metrics.poster`: 3 columns on every phone. An unmeasured width
+/// draws two wide columns or three poster columns at the metrics' card width.
 enum GridColumns {
     struct Metrics: Equatable {
         let card: CGFloat
         let minimumCard: CGFloat
         let maximum: Int
 
-        static let wide = Metrics(card: 392, minimumCard: 360, maximum: 4)
-        static let poster = Metrics(card: 260, minimumCard: 230, maximum: 6)
+        static let wide = Metrics(card: 180, minimumCard: 120, maximum: 3)
+        static let poster = Metrics(card: 130, minimumCard: 100, maximum: 3)
     }
 
-    static let spacing: CGFloat = 40
+    static let spacing: CGFloat = 12
 
     static func count(width: CGFloat?, metrics: Metrics = .wide) -> Int {
-        guard let width else { return metrics.maximum }
+        guard let width else { return metrics == .wide ? 2 : metrics.maximum }
         let fitting = Int(((width + spacing) / (metrics.minimumCard + spacing)).rounded(.down))
         return min(metrics.maximum, max(1, fitting))
     }
@@ -2298,7 +1774,7 @@ extension ShelfModel {
     }
 }
 
-/// When a focused grid card asks for the next page (awe#5318): it is one of the last `columns`
+/// When an appearing grid card asks for the next page (awe#5318): it is one of the last `columns`
 /// cards. That is the last row, plus the end of the row above when the last row is short.
 enum GridPaging {
     static func triggers(index: Int, count: Int, columns: Int) -> Bool {

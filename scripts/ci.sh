@@ -58,6 +58,8 @@ pretty() {
 }
 
 echo "ci: 2/3 unit tests"
+# Ad hoc signing, no team: the simulator's Keychain refuses an unsigned host (-34018), and
+# SessionKeychainTests need it.
 xcodebuild test \
   -project HopeTViOS.xcodeproj \
   -scheme HopeTViOS \
@@ -66,7 +68,7 @@ xcodebuild test \
   -destination "platform=iOS Simulator,id=$simulator_id" \
   -derivedDataPath build/DerivedData \
   -resultBundlePath "$results/tests.xcresult" \
-  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
   | tee "$results/test.log" | pretty
 
 echo "ci: 3/3 Release build"

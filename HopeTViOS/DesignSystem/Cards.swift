@@ -16,41 +16,39 @@ enum CardShape {
     var artAspect: CGFloat {
         switch self {
         case .poster: return 360.0 / 260.0
-        case .wide: return 248.0 / 440.0
-        case .hero, .banner: return 9.0 / 16.0
+        case .wide, .hero, .banner: return 9.0 / 16.0
         }
     }
 
     var shelfWidth: CGFloat {
         switch self {
-        case .poster: return 260
-        case .wide: return 440
-        // The hero is not a lifted card: its buttons take focus, so it can use the whole stage.
+        case .poster: return 130
+        // Part of the next card shows at the right edge, as on the website.
+        case .wide: return 248
         case .hero: return Layout.stageWidth
-        // A lifted card: focused, plus the shelf title, it still fits under the tab bar.
         case .banner: return Layout.bannerCardWidth
         }
     }
 
-    /// The hero writes its caption over the artwork, and a banner card draws none, so neither
-    /// reserves room under the art.
-    var captionHeight: CGFloat { self == .hero || self == .banner ? 0 : 92 }
+    /// Only a wide card has a caption: the hero writes it over the artwork, and a poster and a
+    /// banner card are image only, as on the website. It fits the show name and two title lines.
+    var captionHeight: CGFloat { self == .wide ? 72 : 0 }
 
     /// One more line of title text under the card art.
-    static let titleLineHeight: CGFloat = 30
+    static let titleLineHeight: CGFloat = 18
 
     func height(forWidth width: CGFloat, titleLines: Int = 1) -> CGFloat {
-        width * artAspect + captionHeight + CGFloat(max(titleLines - 1, 0)) * CardShape.titleLineHeight
+        width * artAspect + captionHeight + CGFloat(max(titleLines - 2, 0)) * CardShape.titleLineHeight
     }
 
     var shelfHeight: CGFloat { height(forWidth: shelfWidth) }
 }
 
 extension CardModel {
-    /// What VoiceOver reads for the card. A banner card draws no text, so it also names the
-    /// subtitle; the other shapes draw it and read the title only.
+    /// What VoiceOver reads for the card. A banner or poster card draws no text, so it also names
+    /// the subtitle; the other shapes draw it and read the title only.
     func accessibilityLabel(shape: CardShape) -> String {
-        guard shape == .banner, let subtitle, !subtitle.isEmpty else { return title }
+        guard shape == .banner || shape == .poster, let subtitle, !subtitle.isEmpty else { return title }
         return "\(title), \(subtitle)"
     }
 }
@@ -61,29 +59,33 @@ struct MediaCard: View {
     var width: CGFloat?
     var titleLines = 1
 
+    @Environment(\.appTheme) private var theme
+
     private var cardWidth: CGFloat { width ?? shape.shelfWidth }
 
     var body: some View {
-        if shape == .banner {
-            // Image only: no title, subtitle or gradient, as the web banner. Art that is not
-            // about 16:9 draws aspect-fit over a blurred copy (`artIsFallback`).
-            HeroArt(card: card, width: cardWidth, height: cardWidth * shape.artAspect)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-        } else {
+        if shape == .wide {
             captioned
-        }
-    }
-
-    private var captioned: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // A poster card whose art is not portrait draws it fit over a blurred copy (`artIsFallback`).
+        } else {
+            // Image only: no title, subtitle or gradient, as the web banner and poster. Art that is
+            // not about the card's shape draws aspect-fit over a blurred copy (`artIsFallback`).
             HeroArt(card: card, width: cardWidth, height: cardWidth * shape.artAspect)
                 .overlay(alignment: .topTrailing) { BadgeView(text: card.badge) }
                 .overlay(alignment: .bottom) { ProgressStrip(progress: card.progress) }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-            CardCaption(card: card, width: cardWidth, titleLines: titleLines)
+        }
+    }
+
+    private var captioned: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HeroArt(card: card, width: cardWidth, height: cardWidth * shape.artAspect)
+                .overlay(alignment: .topTrailing) { BadgeView(text: card.badge) }
+                .overlay(alignment: .bottom) { ProgressStrip(progress: card.progress) }
+            CardCaption(card: card, width: cardWidth)
         }
         .frame(width: cardWidth, height: shape.height(forWidth: cardWidth, titleLines: titleLines), alignment: .top)
+        .background(theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -121,31 +123,31 @@ struct HeroArt: View {
     }
 }
 
-/// Title and subtitle. Width-limited so a long title truncates instead of widening the card
-/// and breaking shelf alignment.
+/// The website's caption: the show name uppercase in the accent color, then the title in up to two
+/// lines. Width-limited so a long title truncates instead of widening the card.
 private struct CardCaption: View {
     let card: CardModel
     let width: CGFloat
-    var titleLines = 1
 
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
+            if let subtitle = card.subtitle, !subtitle.isEmpty {
+                Text(subtitle.uppercased())
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.accent)
+                    .lineLimit(1)
+            }
             Text(card.title)
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(theme.textPrimary)
-                .lineLimit(titleLines)
-                // A multi-line title reserves its lines, so every card of a grid keeps one height.
-                .frame(height: titleLines > 1 ? CGFloat(titleLines) * CardShape.titleLineHeight : nil, alignment: .topLeading)
-            Text(card.subtitle ?? "")
-                .font(.system(size: 19))
-                .foregroundStyle(theme.textSecondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
         }
         .frame(width: width - Layout.cardCaptionInset * 2, alignment: .leading)
         .padding(.horizontal, Layout.cardCaptionInset)
-        .padding(.bottom, Layout.cardCaptionInset - 4)
+        .padding(.vertical, 8)
     }
 }
 
@@ -155,13 +157,13 @@ private struct BadgeView: View {
     var body: some View {
         if let text {
             Text(text)
-                .font(.system(size: 16, weight: .bold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .font(.system(size: 11, weight: .bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
                 .background(text == "LIVE" ? Color.red : Color.black.opacity(0.65))
                 .foregroundStyle(.white)
                 .clipShape(Capsule())
-                .padding(10)
+                .padding(6)
         }
     }
 }
@@ -177,7 +179,7 @@ private struct ProgressStrip: View {
                     Rectangle().fill(.white).frame(width: geometry.size.width * progress)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 3)
         }
     }
 }

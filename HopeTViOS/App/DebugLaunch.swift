@@ -4,8 +4,7 @@ import SwiftUI
 #if DEBUG
 /// Launch overrides for the simulator.
 ///
-/// The tvOS simulator takes no scripted remote input, so a developer cannot drive focus
-/// from a script. These arguments open a tab or a Screen directly, which is the only way to
+/// These arguments open a tab or a Screen directly, which is the only way to
 /// capture evidence of a screen other than the first tab. `<bundle-id>` is the shell's
 /// SHELL_BUNDLE_ID (`de.hopemedia.awe.hopetv` for the default shell):
 ///
@@ -13,8 +12,7 @@ import SwiftUI
 ///     xcrun simctl launch --console-pty <device> <bundle-id> -open-screen <id> -open-param <id>
 ///     xcrun simctl launch --console-pty <device> <bundle-id> -open-tab-screen <tab screen id> -press-first-card 1
 ///     xcrun simctl launch --console-pty <device> <bundle-id> -open-screen <id> -open-param <id> -press-play 1
-///     xcrun simctl launch --console-pty <device> <bundle-id> -open-tab-screen <Live screen id> -focus-schedule 1
-///     xcrun simctl launch --console-pty <device> <bundle-id> -open-tab-screen <Live screen id> -focus-schedule 1 -press-live-now 1
+///     xcrun simctl launch --console-pty <device> <bundle-id> -open-tab-screen <Live screen id> -press-live-now 1
 ///     xcrun simctl launch --console-pty <device> <bundle-id> -open-tab-screen <Live screen id> -press-live 1
 ///     xcrun simctl launch --console-pty <device> <bundle-id> -chrome-strings-file <path>
 ///     xcrun simctl launch --console-pty <device> <bundle-id> -open-screen <id> -open-param <id> -press-play 1 -playback-seek-to-end 20
@@ -144,31 +142,8 @@ enum DebugLaunch {
         router.play(model.request)
     }
 
-    /// Moves focus to the first schedule row, through the strip's own `@FocusState`. Only a
-    /// focus stop can take it, so a screenshot of the highlighted row proves the row is one.
-    /// Once per launch. The wait lets the focus engine settle on the player first. A cancelled
-    /// wait (the strip was rebuilt) returns `nil` and leaves the flag for the next strip.
-    @MainActor private static var focusedSchedule = false
-
-    @MainActor
-    static func focusScheduleRow(in rows: [ScheduleModel.Entry], screen: StackEntry?, router: AppRouter) async -> String? {
-        guard UserDefaults.standard.bool(forKey: "focus-schedule"), !focusedSchedule,
-              let id = rows.first?.id else { return nil }
-        // The tab the run asked for, and the strip of the screen on show: Home and Live can both
-        // hold a schedule, and a strip on a tab rendered underneath must never take the focus.
-        guard router.state.tabScreenId == tab(in: router)?.screenId,
-              router.state.current == screen else {
-            return nil
-        }
-        guard (try? await Task.sleep(for: .seconds(1))) != nil else { return nil }
-
-        focusedSchedule = true
-        print("[tv] debug focus → schedule row \(id)")
-        return id
-    }
-
-    /// Presses the on-air schedule row after `-focus-schedule` focused it, through the same
-    /// `router.play` its button calls. `-press-live-now 1`, once per launch.
+    /// Presses the on-air schedule row, through the same `router.play` its button calls.
+    /// `-press-live-now 1`, once per launch.
     @MainActor private static var pressedLive = false
 
     @MainActor
@@ -229,15 +204,4 @@ enum DebugLaunch {
     }
 }
 
-/// The screen a view draws on, for the launch overrides above.
-private struct DebugScreenKey: EnvironmentKey {
-    static let defaultValue: StackEntry? = nil
-}
-
-extension EnvironmentValues {
-    var debugScreen: StackEntry? {
-        get { self[DebugScreenKey.self] }
-        set { self[DebugScreenKey.self] = newValue }
-    }
-}
 #endif

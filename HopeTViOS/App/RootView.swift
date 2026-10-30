@@ -60,6 +60,7 @@ struct RootView: View {
             }
         }
         .environment(\.appTheme, theme)
+        .tint(theme.accent)
         .background(theme.background)
         // One cover for the whole playback. A new request (the Episodes tab, Up Next) replaces the
         // player inside it: `.id` stops the old `PlayerView` (`onDisappear`) and starts a new one,
@@ -129,6 +130,9 @@ private extension RootView {
 /// A layout's tab bar: the initial route's root, or a layout frame. Each tab draws this
 /// layout's chrome. The root tab bar ends with the platform Account tab when the Manifest flag
 /// is on (awe#6563); a layout frame never gets it.
+///
+/// The `TabView` keeps the state and VoiceOver. `FloatingTabBar` draws over it, so the system bar
+/// is hidden and the bar's height comes in as a safe-area inset.
 private struct LayoutTabs: View {
     let layoutId: String
     @Binding var selection: String
@@ -137,19 +141,38 @@ private struct LayoutTabs: View {
 
     @Environment(AppRouter.self) private var router
 
+    private var showsAccount: Bool { !pushed && router.tree.showsAccountTab }
+
+    private var items: [FloatingTabBar.Item] {
+        var items = router.tree.tabs(ofLayout: layoutId).map {
+            FloatingTabBar.Item(id: $0.screenId, label: $0.label, symbol: TabIcon.symbol(for: $0.icon))
+        }
+        if showsAccount {
+            items.append(FloatingTabBar.Item(id: AccountTab.tag, label: ChromeText.string(.account), symbol: "person"))
+        }
+        return items
+    }
+
     var body: some View {
         TabView(selection: $selection) {
             ForEach(router.tree.tabs(ofLayout: layoutId), id: \.screenId) { tab in
                 LayoutHost(entry: entry(tab.screenId), layoutId: router.tree.chromeLayoutId(for: .tab(layoutId: layoutId)), pushed: pushed)
+                    .toolbar(.hidden, for: .tabBar)
                     .tabItem { Text(tab.label) }
                     .tag(tab.screenId)
             }
-            if !pushed, router.tree.showsAccountTab {
+            if showsAccount {
                 AccountView()
+                    .toolbar(.hidden, for: .tabBar)
                     .tabItem { Text(ChromeText.string(.account)) }
                     .tag(AccountTab.tag)
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            FloatingTabBar(items: items, selection: $selection)
+        }
+        // The hero runs under the status bar. A pushed frame keeps its Back button.
+        .toolbar(pushed ? .automatic : .hidden, for: .navigationBar)
     }
 }
 
@@ -234,14 +257,17 @@ private struct ScreenBody: View {
     var body: some View {
         let node = BlockRegistry.evaluate(nodeId: CraftDocument.rootId, document: screen.content, context: context)
 
-        let content = VStack(alignment: .leading, spacing: 48) {
+        let content = VStack(alignment: .leading, spacing: 24) {
             if let node {
                 NodeView(node: node)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Layout.screenMargin)
-        .padding(.vertical, Layout.screenTopPadding)
+        .padding(.top, Layout.screenTopPadding)
+        .padding(.bottom, node?.holdsSearch == true ? 0 : Layout.screenBottomPadding)
+        // A card sets its own style; every other button is a text action.
+        .buttonStyle(ActionButtonStyle())
 
         Group {
             // A search screen scrolls its own results. Inside this scroll view too, the search
@@ -252,17 +278,14 @@ private struct ScreenBody: View {
                 ScrollView { content }
             }
         }
-        // The top safe area holds the overscan margin and the tab bar. A hero that leads the
-        // screen draws its art up by that much plus the padding, so the art starts at the stage top.
+        // A hero that leads the screen draws its art up by the top safe area plus the padding, so
+        // the art starts at the screen top.
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { safeTop = $0 }
-        // A pushed screen, and the bare entry, open on their first action (`TakesDefaultFocus`).
-        .environment(\.defaultFocusNodeId, router.takesDefaultFocus(entry) ? node?.firstFocusNodeId : nil)
         .environment(\.leadingHero, node.flatMap { node in
             node.leadingHeroId.map {
                 LeadingHero(nodeId: $0, insets: node.leadingHeroInsets, screenTop: (safeTop ?? 0) + Layout.screenTopPadding)
             }
         })
-        .environment(\.screenContentTop, safeTop.map { $0 + Layout.screenTopPadding })
         .environment(\.stackEntry, entry)
         .environment(\.loadNextPage) { [store, key = store.key(for: entry.screenId, param: entry.param)] nodeId in
             Task { await store.loadNextPage(key: key, nodeId: nodeId) }
@@ -270,9 +293,6 @@ private struct ScreenBody: View {
         .environment(\.mediaSearch) { [store, screenId = entry.screenId, context] nodeId, query in
             MediaSearchState(await store.search(screenId: screenId, nodeId: nodeId, query: query), nodeId: nodeId, context: context)
         }
-        #if DEBUG
-        .environment(\.debugScreen, entry)
-        #endif
         // The layout's `ContentPlaceholder` color, over the page color (awe#6239). The ShapeStyle
         // overload, like the page color: it fills the safe area too, so no page-color edge shows.
         .background(contentSlotColor.map(Color.init) ?? .clear)
@@ -372,16 +392,15 @@ struct RefusalView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(message.title)
-                .font(.system(size: 52, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(theme.textPrimary)
             Text(message.detail)
-                .font(.system(size: 28))
+                .font(.system(size: 16))
                 .foregroundStyle(theme.textSecondary)
-                .frame(maxWidth: 1100, alignment: .leading)
         }
-        .padding(72)
+        .padding(Layout.screenMargin * 2)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(theme.background)
     }

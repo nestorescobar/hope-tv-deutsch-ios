@@ -26,7 +26,7 @@ struct BadgeBlockView: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             if let symbol = model.symbol {
                 Image(systemName: symbol)
             }
@@ -34,8 +34,8 @@ struct BadgeBlockView: View {
         }
         .font(BlockFont.body(theme: theme, size: 24, weight: .semibold))
         .foregroundStyle(theme.textPrimary)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
         .background(theme.surfaceSelected, in: Capsule())
         .accessibilityElement(children: .combine)
     }
@@ -51,12 +51,12 @@ struct AgeRatingBadge: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 24, weight: .semibold))
+            .font(.system(size: Layout.text(24), weight: .semibold))
             .foregroundStyle(theme.textPrimary)
             .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(theme.textSecondary, lineWidth: 2))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(theme.textSecondary, lineWidth: 1))
             .fixedSize()
     }
 }
@@ -94,15 +94,13 @@ struct HeaderBlockView: View {
     }
 }
 
-/// `RichText`: read-only prose in one `ReadingPanel`, so a long text scrolls under focus.
+/// `RichText`: read-only prose. The screen's own scroll view scrolls it.
 struct RichTextBlockView: View {
     let model: RichTextModel
 
     var body: some View {
-        ReadingPanel(accessibilityText: model.plainText) {
-            RichTextBlocks(blocks: model.blocks)
-        }
-        .frame(maxWidth: 1200, alignment: .leading)
+        RichTextBlocks(blocks: model.blocks)
+            .frame(maxWidth: 1200, alignment: .leading)
     }
 }
 
@@ -115,7 +113,7 @@ private struct RichTextBlocks: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 view(for: block)
             }

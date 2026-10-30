@@ -614,19 +614,6 @@ final class LikeSurfaceTests: XCTestCase {
         XCTAssertNil(freeText.likeItem, "only an ObjectId reaches a route path")
     }
 
-    /// "Like", or "Liked" with a filled heart and the on state.
-    func testTheTransportBarItemShowsTheState() {
-        let off = TransportLike.action(liked: false) {}
-        let on = TransportLike.action(liked: true) {}
-
-        XCTAssertEqual(off.title, "Like")
-        XCTAssertEqual(off.state, .off)
-        XCTAssertEqual(on.title, "Liked")
-        XCTAssertEqual(on.state, .on)
-        XCTAssertEqual(on.accessibilityIdentifier, "player-like")
-        XCTAssertNotEqual(on.image, off.image)
-    }
-
     func testTheChromeStrings() {
         XCTAssertEqual(ChromeText.string(.like), "Like")
         XCTAssertEqual(ChromeText.string(.liked), "Liked")

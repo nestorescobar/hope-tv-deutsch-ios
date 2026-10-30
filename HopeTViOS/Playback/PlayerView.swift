@@ -3,6 +3,10 @@ import SwiftUI
 
 /// Native full-screen playback. The contract got as far as naming a source; everything
 /// from here is the client's.
+///
+/// `AVPlayerViewController` draws the transport bar. In portrait the video sits at the top with
+/// `PlayerDetails` under it; in landscape it fills the screen beside a thin rail. The one player
+/// view stays in place across a rotation, so playback never restarts.
 struct PlayerView: View {
     let request: PlaybackRequest
 
@@ -22,6 +26,11 @@ struct PlayerView: View {
     @State private var artwork: Task<Void, Never>?
     /// Up Next for this episode, decided once when it starts (`router.autoStarts` is read then).
     @State private var offer: UpNext.Offer?
+    /// The playhead is past `UpNext.offerTime`, so the card shows.
+    @State private var offerDue = false
+    /// The viewer closed the card: it stays closed for the rest of this item.
+    @State private var offerClosed = false
+    @State private var offerObserver: Any?
     /// This item's Quality picker, once its master playlist offers two heights or more (awe#6868).
     @State private var quality: QualityLadder?
     @State private var qualityCap = QualityPreference().cap
@@ -31,39 +40,57 @@ struct PlayerView: View {
     @State private var accessLogObserver: NSObjectProtocol?
     #endif
 
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+    /// The width of the landscape rail, inside the black bars beside a 16:9 video.
+    private static let railWidth: CGFloat = 44
 
-            if let player {
-                PlayerController(
-                    player: player,
-                    actions: PlayerInfoAction.actions(for: request, canOpen: router.canOpenCard),
-                    tabs: PlayerTab.tabs(for: request, canOpen: router.canOpenCard),
-                    offer: offer,
-                    qualityOptions: quality?.options(cap: qualityCap),
-                    // Read here, so a press redraws the item as "Liked" (awe#6871).
-                    liked: request.likeItem.map(likes.isLiked),
-                    theme: theme,
-                    router: router,
-                    onCard: { target in
-                        stop()
-                        router.leavePlayback(openingCard: target)
-                    },
-                    onEpisode: { id, automatic in router.playFromPlayer(episodeId: id, automatic: automatic) },
-                    // Back on an offer after the item ended: Back to the screen under the cover.
-                    onClose: { dismiss() },
-                    onQuality: { chooseQuality($0) },
-                    onLike: { [likes] in
-                        guard let item = request.likeItem else { return }
-                        Task { await likes.toggle(item) }
+    var body: some View {
+        GeometryReader { geometry in
+            let landscape = geometry.size.width > geometry.size.height
+            let videoHeight = landscape ? geometry.size.height : geometry.size.width * 9 / 16
+            let topBar: CGFloat = landscape ? 0 : 52
+
+            ZStack(alignment: .topLeading) {
+                Color.black.ignoresSafeArea()
+
+                Group {
+                    if let player {
+                        PlayerController(player: player)
+                    } else {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(theme.accent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                )
-                .ignoresSafeArea()
-            } else {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(theme.accent)
+                }
+                .frame(width: geometry.size.width - (landscape ? Self.railWidth : 0), height: videoHeight)
+                .offset(x: landscape ? Self.railWidth : 0, y: topBar)
+
+                if landscape {
+                    VStack(spacing: 8) { chrome }
+                        .frame(width: Self.railWidth)
+                } else {
+                    HStack(spacing: 8) { chrome }
+                        .padding(.horizontal, 8)
+                        .frame(height: topBar)
+                    PlayerDetails(request: request,
+                                  tabs: PlayerTab.tabs(for: request, canOpen: router.canOpenCard),
+                                  actions: PlayerInfoAction.actions(for: request, canOpen: router.canOpenCard),
+                                  onCard: { target in
+                                      stop()
+                                      router.leavePlayback(openingCard: target)
+                                  },
+                                  onEpisode: { router.playFromPlayer(episodeId: $0, automatic: false) })
+                        .padding(.top, topBar + videoHeight)
+                }
+            }
+            .overlay(alignment: landscape ? .bottomTrailing : .bottom) {
+                if let offer, offerDue, !offerClosed {
+                    UpNextCard(offer: offer,
+                               onPlay: { router.playFromPlayer(episodeId: offer.item.id, automatic: $0) },
+                               onClose: { offerClosed = true })
+                        .frame(maxWidth: 420)
+                        .padding(Layout.screenMargin)
+                }
             }
         }
         .accessibilityIdentifier("full-screen-player")
@@ -76,8 +103,65 @@ struct PlayerView: View {
             guard let item = request.likeItem else { return }
             await likes.list.check(item.itemType, item.itemId)
         }
-        .onDisappear { stop() }
-        .onExitCommand { dismiss() }
+        .onAppear { OrientationLock.set(.allButUpsideDown) }
+        .onDisappear {
+            stop()
+            // A new request replaces this view inside the cover; only the end of playback turns back.
+            if router.playback == nil { OrientationLock.set(.portrait) }
+        }
+    }
+
+    /// Close, then Like and Quality when this item has them.
+    @ViewBuilder
+    private var chrome: some View {
+        Button {
+            dismiss()
+        } label: {
+            glyph("xmark")
+        }
+        .accessibilityLabel(ChromeText.string(.remove))
+        .accessibilityIdentifier("player-close")
+
+        Spacer(minLength: 0)
+
+        // Read here, so a press redraws the item as "Liked" (awe#6871).
+        if let item = request.likeItem {
+            let liked = likes.isLiked(item)
+            Button {
+                Task { await likes.toggle(item) }
+            } label: {
+                glyph(liked ? "heart.fill" : "heart")
+            }
+            .accessibilityLabel(ChromeText.string(liked ? .liked : .like))
+            .accessibilityIdentifier("player-like")
+        }
+
+        if let options = quality?.options(cap: qualityCap) {
+            Menu {
+                ForEach(options, id: \.cap) { option in
+                    Button {
+                        chooseQuality(option.cap)
+                    } label: {
+                        if option.isOn {
+                            Label(option.title, systemImage: "checkmark")
+                        } else {
+                            Text(option.title)
+                        }
+                    }
+                }
+            } label: {
+                glyph("slider.horizontal.3")
+            }
+            .accessibilityLabel(ChromeText.string(.quality))
+            .accessibilityIdentifier("player-quality")
+        }
+    }
+
+    private func glyph(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
     }
 
     private func start() async {
@@ -130,15 +214,17 @@ struct PlayerView: View {
         return playlist
     }
 
-    /// Sets the Up Next proposal on the item, `UpNext.offerLead` before its end. It needs the
-    /// duration, so it runs after playback starts and never delays the stream.
+    /// Shows the Up Next card `UpNext.offerLead` before the end. It needs the duration, so it runs
+    /// after playback starts and never delays the stream. A scrub back before the offer time
+    /// hides the card again.
     private func propose(on item: AVPlayerItem) async {
-        guard let offer, let duration = try? await item.asset.load(.duration), duration.isNumeric, duration.seconds > 0,
-              !Task.isCancelled else { return }
+        guard offer != nil, let player, let duration = try? await item.asset.load(.duration), duration.isNumeric,
+              duration.seconds > 0, !Task.isCancelled else { return }
         // A resume point can be past the usual offer time; the offer then shows 1 s from now.
         let offerTime = UpNext.offerTime(duration: duration.seconds, now: item.currentTime().seconds)
-        let time = CMTime(seconds: offerTime, preferredTimescale: 600)
-        item.nextContentProposal = AVContentProposal(contentTimeForTransition: time, title: offer.item.title, previewImage: nil)
+        offerObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { time in
+            MainActor.assumeIsolated { offerDue = time.seconds >= offerTime }
+        }
     }
 
     /// True while this request is still the one on screen and its task still runs.
@@ -265,11 +351,15 @@ struct PlayerView: View {
             player.removeTimeObserver(observer)
         }
         observer = nil
+        if let offerObserver, let player {
+            player.removeTimeObserver(offerObserver)
+        }
+        offerObserver = nil
         player?.pause()
         player = nil
     }
 
-    /// Back returns to the screen Play was pressed on: the stack under the cover is unchanged.
+    /// Close returns to the screen Play was pressed on: the stack under the cover is unchanged.
     private func dismiss() {
         stop()
         router.endPlayback()
@@ -339,20 +429,7 @@ extension PlaybackRequest {
     }
 }
 
-/// The transport bar's Like item (awe#6871, ADR-0259 §5): "Like", or "Liked" with a filled heart.
-/// A press toggles it.
-enum TransportLike {
-    static func action(liked: Bool, toggle: @escaping () -> Void) -> UIAction {
-        let action = UIAction(title: ChromeText.string(liked ? .liked : .like), image: UIImage(systemName: liked ? "heart.fill" : "heart"),
-                              state: liked ? .on : .off) { _ in toggle() }
-        // The UI tests find it by this id, not by the served label.
-        action.accessibilityIdentifier = "player-like"
-        return action
-    }
-}
-
-/// The actions this renderer adds to the player's Info panel, after the system ones ("Play from
-/// beginning"). Pure, so the rule is testable.
+/// The actions this renderer adds under the player. Pure, so the rule is testable.
 enum PlayerInfoAction: Equatable {
     /// Close the player and open the episode's show, like a show card.
     case goToShow(CardTarget)
@@ -371,8 +448,7 @@ enum PlayerInfoAction: Equatable {
     }
 }
 
-/// The custom tabs beside the system Info tab (`customInfoViewControllers`). Pure, so the rule is
-/// testable.
+/// The lists under the player (`PlayerDetails`). Pure, so the rule is testable.
 enum PlayerTab: Equatable {
     case episodes(Playlist)
     case related(RelatedEpisodes)
@@ -402,82 +478,20 @@ enum PlayerTab: Equatable {
     }
 }
 
-/// `AVPlayerViewController`, so the Info panel can take this renderer's actions
-/// (`infoViewActions`), the Episodes, Related or Schedule tab (`customInfoViewControllers`), Up Next
-/// (`contentProposalViewController`) and the Quality menu (`transportBarCustomMenuItems`). SwiftUI's
-/// `VideoPlayer` does not expose them.
+/// `AVPlayerViewController` for the transport bar, the rate and audio menus, AirPlay and Picture in
+/// Picture. `allowsPictureInPicturePlayback` is on by default; the automatic start is not.
 private struct PlayerController: UIViewControllerRepresentable {
     let player: AVPlayer
-    let actions: [PlayerInfoAction]
-    let tabs: [PlayerTab]
-    let offer: UpNext.Offer?
-    /// nil draws no Quality menu: an MP4, one height, or a playlist that did not load.
-    let qualityOptions: [QualityLadder.Option]?
-    /// The Like item's state; nil draws none (a livestream, a trailer).
-    let liked: Bool?
-    let theme: AppTheme
-    let router: AppRouter
-    let onCard: (CardTarget) -> Void
-    let onEpisode: (_ id: String, _ automatic: Bool) -> Void
-    let onClose: () -> Void
-    let onQuality: (_ cap: Int) -> Void
-    let onLike: () -> Void
-
-    func makeCoordinator() -> ProposalDelegate { ProposalDelegate() }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
-        context.coordinator.onEpisode = onEpisode
-        controller.delegate = context.coordinator
-        // Beside the system Info tab, which shows the title, show name and abstract (spec §5.3). Set
-        // once: `PlayerView` is rebuilt per request (`.id(request.id)`).
-        controller.customInfoViewControllers = tabs.map { tab in
-            switch tab {
-            case let .episodes(playlist):
-                return EpisodesTab.controller(playlist, theme: theme) { onEpisode($0.id, false) }
-            case let .related(related):
-                return RelatedTab.controller(related, theme: theme) { onEpisode($0.id, false) }
-            case let .schedule(schedule):
-                // A livestream: "On now" and the next broadcasts (awe#6553).
-                return ScheduleTab.controller(schedule, theme: theme, router: router)
-            }
-        }
-        if let offer {
-            controller.contentProposalViewController = UpNextProposalController(offer: offer, item: player.currentItem, theme: theme, closePlayer: onClose)
-        }
-        // Append: the system actions stay first.
-        controller.infoViewActions += actions.map { action in
-            switch action {
-            case let .goToShow(target):
-                let item = UIAction(title: action.title, image: UIImage(systemName: "rectangle.stack")) { _ in onCard(target) }
-                // The UI tests find it by this id, not by the served label.
-                item.accessibilityIdentifier = "info-go-to-show"
-                return item
-            }
-        }
+        controller.allowsPictureInPicturePlayback = true
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
         return controller
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         if controller.player !== player { controller.player = player }
-        // The playlist loads after the controller exists, so the menu arrives here. Rebuilt only
-        // when its rows or the Like state change. Like first, then Quality, beside the system Audio
-        // and Subtitles menus.
-        if context.coordinator.qualityOptions != qualityOptions || context.coordinator.liked != liked {
-            context.coordinator.qualityOptions = qualityOptions
-            context.coordinator.liked = liked
-            var items: [UIMenuElement] = liked.map { [TransportLike.action(liked: $0, toggle: onLike)] } ?? []
-            items += qualityOptions.map { [Self.qualityMenu($0, choose: onQuality)] } ?? []
-            controller.transportBarCustomMenuItems = items
-        }
-    }
-
-    /// "Quality": Auto, then "Up to <height>" rows, with the current choice checked.
-    private static func qualityMenu(_ options: [QualityLadder.Option], choose: @escaping (Int) -> Void) -> UIMenu {
-        UIMenu(title: ChromeText.string(.quality), image: UIImage(systemName: "slider.horizontal.3"),
-               options: .singleSelection, children: options.map { option in
-                   UIAction(title: option.title, state: option.isOn ? .on : .off) { _ in choose(option.cap) }
-               })
     }
 }

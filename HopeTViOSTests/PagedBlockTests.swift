@@ -605,65 +605,46 @@ final class CollectionPagingTests: XCTestCase {
 
 final class GridColumnsTests: XCTestCase {
 
-    func testTheScreenWidthKeepsFour392PointColumns() {
-        // 1920 less two 64 pt margins. A tab grid measures less on the simulator (1632 pt, it
-        // starts at x 144), where four columns share out to 378 pt.
-        XCTAssertEqual(GridColumns.count(width: 1792), 4)
-        XCTAssertEqual(GridColumns.cardWidth(width: 1792, columns: 4), 392)
-    }
-
-    func testAnUnmeasuredGridKeepsFour392PointColumns() {
-        XCTAssertEqual(GridColumns.count(width: nil), 4)
-        XCTAssertEqual(GridColumns.cardWidth(width: nil, columns: 4), 392)
-    }
-
-    func testTheResultsBesideTheGridKeyboardTakeThreeNarrowerColumns() {
-        // Measured on the tvOS 27 simulator: the results get 1250 pt beside the grid keyboard.
-        XCTAssertEqual(GridColumns.count(width: 1250), 3)
-        XCTAssertEqual(GridColumns.cardWidth(width: 1250, columns: 3), 390)
-    }
-
-    func testANarrowGridKeepsOneColumnOfTheMinimumWidth() {
-        XCTAssertEqual(GridColumns.count(width: 200), 1)
-        XCTAssertEqual(GridColumns.cardWidth(width: 200, columns: 1), 360)
-    }
-
-    /// The default metrics are the landscape grid's, so every existing grid keeps its columns.
-    func testTheDefaultMetricsAreTheLandscapeGrid() {
-        XCTAssertEqual(GridColumns.Metrics.wide, GridColumns.Metrics(card: 392, minimumCard: 360, maximum: 4))
-        for width: CGFloat? in [nil, 1792, 1250, 200] {
-            XCTAssertEqual(GridColumns.count(width: width), GridColumns.count(width: width, metrics: .wide))
+    /// Two wide columns under a 430 pt phone: SE, 16 and 17 Pro. The grid width is the phone less
+    /// the two margins.
+    func testPhonesUnder430PointsDrawTwoWideColumns() {
+        for phone: CGFloat in [375, 393, 402] {
+            let width = phone - 2 * Layout.screenMargin
+            XCTAssertEqual(GridColumns.count(width: width), 2, "\(phone) pt")
+            XCTAssertEqual(GridColumns.cardWidth(width: width, columns: 2), ((width - GridColumns.spacing) / 2).rounded(.down))
         }
     }
 
-    /// A poster grid (awe#6870): six 260 pt portrait columns inside the screen margins, with the
-    /// same 40 pt gap. 6 × 260 + 5 × 40 = 1760 pt, inside 1792.
-    func testThePosterGridTakesSix260PointColumns() {
-        XCTAssertEqual(GridColumns.count(width: 1792, metrics: .poster), 6)
-        XCTAssertEqual(GridColumns.cardWidth(width: 1792, columns: 6, metrics: .poster), 260)
-        XCTAssertEqual(GridColumns.count(width: nil, metrics: .poster), 6)
-        XCTAssertEqual(GridColumns.cardWidth(width: nil, columns: 6, metrics: .poster), 260)
+    func testAPhoneOver430PointsDrawsThreeWideColumns() {
+        let width = 440 - 2 * Layout.screenMargin
+        XCTAssertEqual(GridColumns.count(width: width), 3)
+        XCTAssertEqual(GridColumns.cardWidth(width: width, columns: 3), 128)
     }
 
-    /// Measured on the tvOS 27 simulator (awe#6870): a tab grid starts at x 144, so it gets
-    /// 1920 − 2 × 144 = 1632 pt. Six columns still fit there, at 238 pt.
-    func testTheMeasuredTabWidthStillTakesSixPosterColumns() {
-        XCTAssertEqual(GridColumns.count(width: 1632, metrics: .poster), 6)
-        XCTAssertEqual(GridColumns.cardWidth(width: 1632, columns: 6, metrics: .poster), 238)
+    func testAnUnmeasuredWidthDrawsTwoWideColumnsAtTheCardWidth() {
+        XCTAssertEqual(GridColumns.count(width: nil), 2)
+        XCTAssertEqual(GridColumns.cardWidth(width: nil, columns: 2), GridColumns.Metrics.wide.card)
     }
 
-    func testANarrowPosterGridTakesFewerColumns() {
-        XCTAssertEqual(GridColumns.count(width: 1250, metrics: .poster), 4)
-        XCTAssertEqual(GridColumns.cardWidth(width: 1250, columns: 4, metrics: .poster), 260)
-        XCTAssertEqual(GridColumns.count(width: 200, metrics: .poster), 1)
-        XCTAssertEqual(GridColumns.cardWidth(width: 200, columns: 1, metrics: .poster), 230)
+    func testOneColumnNeverShrinksBelowTheMinimum() {
+        XCTAssertEqual(GridColumns.count(width: 100), 1)
+        XCTAssertEqual(GridColumns.cardWidth(width: 100, columns: 1), GridColumns.Metrics.wide.minimumCard)
     }
 
-    /// The last-row page load counts the poster columns: the last six cards trigger.
-    func testThePosterGridPagesOnItsLastRow() {
-        let columns = GridColumns.count(width: 1792, metrics: .poster)
-        XCTAssertTrue(GridPaging.triggers(index: 18, count: 24, columns: columns))
-        XCTAssertFalse(GridPaging.triggers(index: 17, count: 24, columns: columns))
+    func testAPosterGridDrawsThreeColumnsOnEveryPhone() {
+        for phone: CGFloat in [375, 393, 440] {
+            let width = phone - 2 * Layout.screenMargin
+            XCTAssertEqual(GridColumns.count(width: width, metrics: .poster), 3, "\(phone) pt")
+        }
+        XCTAssertEqual(GridColumns.count(width: nil, metrics: .poster), 3)
+        XCTAssertEqual(GridColumns.cardWidth(width: nil, columns: 3, metrics: .poster), GridColumns.Metrics.poster.card)
+    }
+
+    /// The poster grid pages with its own column count: the last three cards ask.
+    func testAPosterGridPagesOnItsLastRow() {
+        let columns = GridColumns.count(width: 361, metrics: .poster)
+        XCTAssertTrue(GridPaging.triggers(index: 21, count: 24, columns: columns))
+        XCTAssertFalse(GridPaging.triggers(index: 20, count: 24, columns: columns))
     }
 }
 

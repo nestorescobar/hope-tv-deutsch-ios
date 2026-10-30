@@ -207,3 +207,16 @@ struct LayoutBorderSide: Shape {
         return path
     }
 }
+
+extension EvaluatedNode {
+    /// A block that needs the full width of a phone, at any depth under this node. A row that holds
+    /// one draws as a column.
+    var isWideBlock: Bool {
+        first {
+            switch $0.content {
+            case .playAction, .detail, .episodeDetail, .showMeta, .player, .schedule, .shelf: return true
+            default: return false
+            }
+        } != nil
+    }
+}

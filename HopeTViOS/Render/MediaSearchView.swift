@@ -107,8 +107,9 @@ final class MediaSearchSession {
     }
 }
 
-/// The native tvOS search field (`.searchable`: the system keyboard and Siri dictation), then
-/// an Episodes grid and a Shows grid. An empty field shows the Collection tiles instead
+/// The search field, then an Episodes grid and a Shows grid. The field is a `TextField`:
+/// `.searchable` attaches to a navigation bar, and a tab root has none (one `NavigationStack` wraps
+/// the `TabView`, docs/PORTING.md Section 5). An empty field shows the Collection tiles instead
 /// (awe#5956). A card or a tile opens like a list card: the served `screenLink` first, then the
 /// convention (`AppRouter.select`, so an episode plays at once when it can).
 struct MediaSearchView: View {
@@ -118,53 +119,43 @@ struct MediaSearchView: View {
     @Environment(\.mediaSearch) private var search
     @State private var text = ""
     @State private var session = MediaSearchSession()
-    @State private var scrolled = false
+    @FocusState private var editing: Bool
 
     private var run: @MainActor (String) async -> MediaSearchState {
         { [search, nodeId = model.nodeId] query in await search?(nodeId, query) ?? .unavailable }
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 44) {
-                if let tiles = model.tileGrid(for: text) {
-                    ShelfView(model: tiles)
-                } else if case let .results(results) = session.state {
-                    if let episodes = results.episodes {
-                        ShelfView(model: episodes)
+        VStack(alignment: .leading, spacing: 16) {
+            field
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let tiles = model.tileGrid(for: text) {
+                        ShelfView(model: tiles)
+                    } else if case let .results(results) = session.state {
+                        if let episodes = results.episodes {
+                            ShelfView(model: episodes)
+                        }
+                        if let shows = results.shows {
+                            ShelfView(model: shows)
+                        }
+                    } else if let message = session.state.message {
+                        Text(message)
+                            .font(.system(size: Layout.text(26)))
+                            .foregroundStyle(theme.textSecondary)
                     }
-                    if let shows = results.shows {
-                        ShelfView(model: shows)
-                    }
-                } else if let message = session.state.message {
-                    Text(message)
-                        .font(.system(size: 26))
-                        .foregroundStyle(theme.textSecondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, Layout.screenBottomPadding)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // The cards keep to the margin; scrolled content runs to the screen edges below it.
+            .scrollClipDisabled()
+            .scrollDismissesKeyboard(.immediately)
         }
-        // The results draw past the frame to the stage edges, as a screen does on every other
-        // tab. Clipped, they stop 120 pt above the bottom edge and leave a blank band where the
-        // tab bar was.
-        .scrollClipDisabled()
-        // Scrolled results hide the tab bar, as a scrolled screen does on every other tab. At
-        // the top, the field is the first thing under the bar, so nothing draws under it.
-        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > 1 } action: { _, scrolled in
-            self.scrolled = scrolled
-        }
-        .toolbar(scrolled ? .hidden : .automatic, for: .tabBar)
-        .searchable(text: $text, prompt: ChromeText.string(.searchPrompt))
-        // The search container sizes to its frame, not to its content: without a height it
-        // draws the field and collapses the results to zero. It takes the screen's visible
-        // height (the screen ScrollView's, inside the safe area) less `ScreenBody`'s padding.
+        // A search screen has no outer scroll view, so this takes the screen's visible height.
         .containerRelativeFrame(.vertical) { length, _ in
             max(length - 2 * Layout.screenTopPadding, 0)
         }
-        // The system lays out the field row and the keyboard for the full stage width, from the
-        // view's leading edge. Inside `ScreenBody`'s side margins they ran past the right edge
-        // (the dictation hint, the delete key). The system insets the results itself.
-        .padding(.horizontal, -Layout.screenMargin)
         .onChange(of: text) { _, text in
             session.update(text, search: run)
         }
@@ -183,6 +174,41 @@ struct MediaSearchView: View {
             }
         }
         #endif
+    }
+}
+
+private extension MediaSearchView {
+    var field: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(theme.textSecondary)
+                .accessibilityHidden(true)
+            TextField(ChromeText.string(.searchPrompt), text: $text)
+                .font(.system(size: 17))
+                .foregroundStyle(theme.textPrimary)
+                .tint(theme.accent)
+                .focused($editing)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("media-search-field")
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(theme.textSecondary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(ChromeText.string(.remove))
+            }
+        }
+        .padding(.leading, 12)
+        .frame(minHeight: 48)
+        .background(theme.surfaceSelected, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12).strokeBorder(editing ? theme.accent : .clear, lineWidth: 1)
+        }
     }
 }
 

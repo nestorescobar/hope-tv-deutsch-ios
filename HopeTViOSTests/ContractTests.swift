@@ -325,7 +325,7 @@ final class RegistryKeyListTests: XCTestCase {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("HopeTV/Registry/tvRegistryKeys.json")
+            .appendingPathComponent("ContractKit/Registry/tvRegistryKeys.json")
         let file = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
 
         XCTAssertEqual(file["keys"].array.compactMap(\.string), BlockRegistry.keys)
@@ -475,34 +475,6 @@ final class FailureMessageTests: XCTestCase {
 
         XCTAssertEqual(message.title, "Hope TV Deutsch cannot open this App")
         XCTAssertEqual(message.detail, RejectionReason.wrongAppDesign("hope").text)
-    }
-}
-
-/// The text panel's scroll rule: short text never scrolls; long text scrolls a third of the
-/// panel per press and lets focus leave at either end.
-final class ReadingScrollTests: XCTestCase {
-
-    func testShortTextHasNoPanelAndLetsFocusLeave() {
-        let scroll = ReadingScroll(contentHeight: 400, maxHeight: 620)
-
-        XCTAssertFalse(scroll.scrolls)
-        XCTAssertNil(scroll.step(from: 0, down: true))
-        XCTAssertNil(scroll.step(from: 0, down: false))
-    }
-
-    func testLongTextScrollsAThirdPerPressAndLeavesAtTheEnds() throws {
-        let scroll = ReadingScroll(contentHeight: 1200, maxHeight: 600)
-        XCTAssertTrue(scroll.scrolls)
-        XCTAssertEqual(scroll.overflow, 600)
-
-        XCTAssertNil(scroll.step(from: 0, down: false), "at the top, Up leaves the panel")
-        let first = try XCTUnwrap(scroll.step(from: 0, down: true))
-        XCTAssertEqual(first, 200)
-        let second = try XCTUnwrap(scroll.step(from: first, down: true))
-        let third = try XCTUnwrap(scroll.step(from: second, down: true))
-        XCTAssertEqual(third, 600, "the last step stops at the end")
-        XCTAssertNil(scroll.step(from: third, down: true), "at the bottom, Down leaves the panel")
-        XCTAssertEqual(scroll.step(from: third, down: false), 400)
     }
 }
 
@@ -664,23 +636,4 @@ final class ScheduleRefreshLoopTests: XCTestCase {
         XCTAssertEqual(events, ["sleep", "fetch", "sleep", "fetch", "sleep"])
     }
 
-    /// The inline player loads its stream only on screen: a covered NavigationStack root or an
-    /// unselected tab still sees the "may play" change and must stay silent.
-    /// The inline card: before the first measure it uses the assumed tab-bar layout, so it does
-    /// not jump; an odd huge content top never collapses it.
-    func testTheInlineCardSizeIsStableBeforeTheFirstMeasure() {
-        XCTAssertEqual(InlineCardSize.maxWidth(contentTop: nil),
-                       InlineCardSize.maxWidth(contentTop: InlineCardSize.assumedContentTop))
-        XCTAssertEqual(InlineCardSize.maxWidth(contentTop: nil), 1325, accuracy: 1, "the measured simulator size")
-        XCTAssertEqual(InlineCardSize.maxWidth(contentTop: 5000), InlineCardSize.minWidth)
-    }
-
-    func testFocusMovesToTheNearestRowWhenItsRowGoesAway() {
-        XCTAssertEqual(ScheduleFocus.replacement(for: "b", old: ["a", "b", "c"], new: ["a", "c"]), "c")
-        XCTAssertEqual(ScheduleFocus.replacement(for: "c", old: ["a", "b", "c"], new: ["a", "b"]), "b", "the last row")
-        XCTAssertEqual(ScheduleFocus.replacement(for: "b", old: ["a", "b", "c"], new: ["c", "d"]), "c",
-                       "rows before it that also ended shift the position")
-        XCTAssertNil(ScheduleFocus.replacement(for: "b", old: ["a", "b"], new: ["a", "b"]), "still there")
-        XCTAssertNil(ScheduleFocus.replacement(for: "b", old: ["a", "b"], new: []), "no row left")
-    }
 }

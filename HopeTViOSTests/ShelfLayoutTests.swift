@@ -457,22 +457,27 @@ final class ShelfLayoutTests: XCTestCase {
 
     // MARK: - Geometry
 
-    /// Ruled 2026-09-28: the hero is a full-screen hero, not a lifted card, so the old
-    /// 1680 pt focus-scale limit is gone. Its art is 16:9 across the whole 1920 pt stage, and
-    /// its layout is shorter than the art, so the next shelf's title shows at the stage bottom.
-    func testTheHeroArtIsSixteenByNineAcrossTheStage() {
+    /// The hero art keeps the 1920 pt request width (ContractKit reads it). Its layout is taller
+    /// than wide, as the website, with a cap for large phones.
+    func testTheHeroIsTallerThanWideWithACap() {
         XCTAssertEqual(CardShape.hero.shelfWidth, 1920)
         XCTAssertEqual(CardShape.hero.artAspect, 9.0 / 16.0, accuracy: 0.0001)
         XCTAssertEqual(CardShape.hero.shelfHeight, 1080, accuracy: 0.5)
-        XCTAssertLessThan(Layout.heroHeight, Layout.stageHeight)
+        XCTAssertEqual(Layout.heroHeight(width: 393), 432.3, accuracy: 0.01)
+        XCTAssertEqual(Layout.heroHeight(width: 500), 520)
     }
 
-    /// Ruled 2026-10-24: a banner card is 16:9 and image only, so it reserves no caption. The ruled
-    /// 1280 pt does not fit under the tab bar when focused, so it is 1200 x 675 pt.
-    func testABannerCardIsSixteenByNineAt1200() {
-        XCTAssertEqual(CardShape.banner.shelfWidth, 1200)
-        XCTAssertEqual(CardShape.banner.shelfHeight, 675, accuracy: 0.5)
+    /// A banner card is 16:9 and image only, as wide as the screen between the margins.
+    func testABannerCardIsSixteenByNineBetweenTheMargins() {
+        XCTAssertEqual(CardShape.banner.shelfWidth, Layout.phoneWidth - 2 * Layout.screenMargin)
+        XCTAssertEqual(CardShape.banner.shelfHeight, CardShape.banner.shelfWidth * 9 / 16, accuracy: 0.5)
         XCTAssertEqual(CardShape.banner.captionHeight, 0)
+    }
+
+    /// A poster card is image only, so VoiceOver gets its subtitle, as on a banner card.
+    func testOnlyAWideCardHasACaption() {
+        XCTAssertGreaterThan(CardShape.wide.captionHeight, 0)
+        XCTAssertEqual(CardShape.poster.captionHeight, 0)
     }
 
     // MARK: - Collection grid (awe#5982)

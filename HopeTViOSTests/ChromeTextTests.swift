@@ -250,12 +250,12 @@ final class ChromeTextTests: XCTestCase {
 }
 
 /// Drift guard: the backend's English bag carries every tvOS default verbatim, so the English
-/// the server merges under a translation is the English this build falls back to. CI does not
-/// build tvOS, so it runs only in a local unit run.
+/// the server merges under a translation is the English this build falls back to. The bag is a
+/// copy from awe (`scripts/sync-from-awe.sh`).
 final class ChromeTextEnglishDriftTests: XCTestCase {
 
     private func englishBag() throws -> [String: String] {
-        let url = Fixtures.repository.appendingPathComponent("apps/backend/public/locales/mobile/en.json")
+        let url = Fixtures.repository.appendingPathComponent("fixtures/locales/mobile/en.json")
         return try JSONDecoder().decode([String: String].self, from: Data(contentsOf: url))
     }
 

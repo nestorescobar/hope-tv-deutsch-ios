@@ -13,21 +13,20 @@ struct AccountView: View {
     @State private var signingOut = false
     /// Continue on the confirm screen closed the cover: the device history import runs.
     @State private var continuedSignIn = false
-    @FocusState private var signOutFocused: Bool
 
     var body: some View {
-        VStack(spacing: 40) {
+        VStack(spacing: 20) {
             Text(ChromeText.string(.account))
-                .font(.system(size: 52, weight: .bold))
+                .font(.system(size: Layout.text(52), weight: .bold))
                 .foregroundStyle(theme.textPrimary)
             if let session = account.session {
                 Text(ChromeText.string(.signedInAs, ["name": session.name]))
-                    .font(.system(size: 32))
+                    .font(.system(size: Layout.text(32)))
                     .foregroundStyle(theme.textPrimary)
                 // Under `optIn` without consent: one line, no toggle, no link (decision 11).
                 if let site = account.watchHistoryHint {
                     Text(ChromeText.string(.watchHistoryHint, ["site": site]))
-                        .font(.system(size: 28))
+                        .font(.system(size: Layout.text(28)))
                         .foregroundStyle(theme.textSecondary)
                         .accessibilityIdentifier("account-watch-history-hint")
                 }
@@ -38,30 +37,27 @@ struct AccountView: View {
                         signingOut = false
                     }
                 }
-                .font(.system(size: 30, weight: .semibold))
+                .font(.system(size: Layout.text(30), weight: .semibold))
                 .disabled(signingOut)
-                .focused($signOutFocused)
                 .accessibilityIdentifier("account-sign-out")
             } else {
                 Text(ChromeText.string(.signInPrompt))
-                    .font(.system(size: 32))
+                    .font(.system(size: Layout.text(32)))
                     .foregroundStyle(theme.textSecondary)
                 Button(ChromeText.string(.signIn)) { signingIn = true }
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.system(size: Layout.text(30), weight: .semibold))
                     .accessibilityIdentifier("account-sign-in")
             }
         }
         .multilineTextAlignment(.center)
+        .buttonStyle(ActionButtonStyle())
         .padding(Layout.screenMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.background)
         // The code and confirm screen closed signed in (Continue, or Back from the confirm
         // screen): load the server copy, so Keep watching and Resume read it (awe#6564). Continue
         // imports the device history first (awe#6565); the task runs behind the Account tab.
-        // tvOS gives focus back to the item focused before the cover (often the tab bar), and
-        // "Sign in" is gone after an approval. `onDismiss` runs after the cover closes.
         .fullScreenCover(isPresented: $signingIn, onDismiss: {
-            signOutFocused = account.session != nil
             let continued = continuedSignIn
             continuedSignIn = false
             guard account.session != nil else { return }
@@ -99,11 +95,8 @@ struct SignInView: View {
     /// "Get a new code" bumps it, which restarts the task with a new grant.
     @State private var attempt = 0
     @State private var signingOut = false
-    @FocusState private var focus: Action?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appTheme) private var theme
-
-    private enum Action { case newCode, continueAction, signOut }
 
     init(account: MemberAccount, onContinue: @escaping () -> Void) {
         self.account = account
@@ -113,9 +106,24 @@ struct SignInView: View {
 
     var body: some View {
         content
+            .buttonStyle(ActionButtonStyle())
             .padding(Layout.screenMargin)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.background)
+            .overlay(alignment: .topLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(theme.textPrimary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+                .accessibilityLabel(ChromeText.string(.remove))
+                .accessibilityIdentifier("sign-in-close")
+            }
             .task(id: attempt) { await flow.run() }
     }
 
@@ -135,19 +143,18 @@ struct SignInView: View {
         case .unavailable:
             message(ChromeText.string(.signInUnavailable), detail: ChromeText.string(.pressBackToReturn))
         case let .approved(session):
-            VStack(spacing: 48) {
+            VStack(spacing: 24) {
                 Text(ChromeText.string(.signedInAs, ["name": session.name]))
-                    .font(.system(size: 52, weight: .bold))
+                    .font(.system(size: Layout.text(52), weight: .bold))
                     .foregroundStyle(theme.textPrimary)
                     .multilineTextAlignment(.center)
-                HStack(spacing: 40) {
+                HStack(spacing: 12) {
                     // Continue confirms the account: the device history import runs after the
                     // cover closes (awe#6565). Off while Sign out runs: a refused account gets no import.
                     Button(ChromeText.string(.signInContinue)) {
                         onContinue()
                         dismiss()
                     }
-                    .focused($focus, equals: .continueAction)
                     .disabled(signingOut)
                     .accessibilityIdentifier("sign-in-continue")
                     Button(ChromeText.string(.signOut)) {
@@ -157,24 +164,22 @@ struct SignInView: View {
                             dismiss()
                         }
                     }
-                    .focused($focus, equals: .signOut)
                     .disabled(signingOut)
                     .accessibilityIdentifier("sign-in-sign-out")
                 }
-                .font(.system(size: 30, weight: .semibold))
+                .font(.system(size: Layout.text(30), weight: .semibold))
             }
-            .onAppear { focus = .continueAction }
         }
     }
 
     private func message(_ title: String, detail: String? = nil) -> some View {
         VStack(spacing: 20) {
             Text(title)
-                .font(.system(size: 52, weight: .bold))
+                .font(.system(size: Layout.text(52), weight: .bold))
                 .foregroundStyle(theme.textPrimary)
             if let detail {
                 Text(detail)
-                    .font(.system(size: 28))
+                    .font(.system(size: Layout.text(28)))
                     .foregroundStyle(theme.textSecondary)
             }
         }
@@ -182,57 +187,56 @@ struct SignInView: View {
     }
 
     private func retry(_ title: String) -> some View {
-        VStack(spacing: 48) {
+        VStack(spacing: 24) {
             message(title)
             Button(ChromeText.string(.signInNewCode)) { attempt += 1 }
-                .font(.system(size: 30, weight: .semibold))
-                .focused($focus, equals: .newCode)
+                .font(.system(size: Layout.text(30), weight: .semibold))
                 .accessibilityIdentifier("sign-in-new-code")
         }
-        .onAppear { focus = .newCode }
     }
 }
 
-/// The Sign-in code, the address to type, and the QR of `verificationUriComplete`. Nothing here
-/// takes focus: Back closes the screen.
+/// The Sign-in code, the address to type, and the QR of `verificationUriComplete`. Close leaves the
+/// screen: a phone has no Back button under a cover.
 private struct CodePanel: View {
     let grant: SignInGrant
 
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .center, spacing: 120) {
-            VStack(alignment: .leading, spacing: 36) {
+        VStack(alignment: .center, spacing: 28) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(ChromeText.string(.signIn))
-                    .font(.system(size: 52, weight: .bold))
+                    .font(.system(size: Layout.text(52), weight: .bold))
                     .foregroundStyle(theme.textPrimary)
                 Text(ChromeText.string(.signInVisit, ["url": typedAddress]))
-                    .font(.system(size: 32))
+                    .font(.system(size: Layout.text(32)))
                     .foregroundStyle(theme.textPrimary)
                 Text(grant.signInCode)
-                    .font(.system(size: 120, weight: .bold, design: .monospaced))
-                    .tracking(8)
+                    .font(.system(size: 44, weight: .bold, design: .monospaced))
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                    .tracking(2)
                     .foregroundStyle(theme.textPrimary)
                     .accessibilityIdentifier("sign-in-code")
                 Text(ChromeText.string(.signInScan))
-                    .font(.system(size: 28))
+                    .font(.system(size: Layout.text(28)))
                     .foregroundStyle(theme.textSecondary)
                 HStack(spacing: 20) {
                     ProgressView()
                     Text(ChromeText.string(.signInWaiting))
-                        .font(.system(size: 28))
+                        .font(.system(size: Layout.text(28)))
                         .foregroundStyle(theme.textSecondary)
                 }
             }
-            .frame(maxWidth: 960, alignment: .leading)
 
             if let qr = SignInQRCode.image(for: grant.verificationURIComplete.absoluteString) {
                 Image(decorative: qr, scale: 1)
                     .interpolation(.none)
                     .resizable()
-                    .frame(width: 440, height: 440)
+                    .frame(width: 200, height: 200)
                     // A light quiet zone, so a phone reads it on a dark theme.
-                    .padding(28)
+                    .padding(14)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
                     .accessibilityIdentifier("sign-in-qr")
             }

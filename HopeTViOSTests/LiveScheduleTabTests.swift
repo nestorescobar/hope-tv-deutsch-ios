@@ -157,18 +157,6 @@ final class LiveScheduleTabTests: XCTestCase {
         XCTAssertNotNil(request.playlist)
     }
 
-    /// AVKit shows the same tab again and again while the player stays open: each showing reads
-    /// the clock, so "On now" moves.
-    func testEachShowingReadsTheClock() {
-        let clock = ScheduleTabClock()
-        let controller = ScheduleTabController(rootView: AnyView(EmptyView()), clock: clock)
-        clock.now = Date(timeIntervalSinceNow: -3600)
-
-        controller.viewWillAppear(false)
-
-        XCTAssertLessThan(abs(controller.clock.now.timeIntervalSinceNow), 5, "the clock moved to now")
-    }
-
     func testTheTabTitleIsAChromeString() {
         XCTAssertEqual(ChromeText.manifestKey(.scheduleLabel), "tvScheduleLabel")
         XCTAssertEqual(ChromeText.english(.scheduleLabel), "Schedule")

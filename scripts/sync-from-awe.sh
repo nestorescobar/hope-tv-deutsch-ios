@@ -31,9 +31,10 @@ awe="$(cd "$1" && pwd)"
 src="$awe/apps/tv/tvos/HopeTV"
 tests="$awe/apps/tv/tvos/HopeTVTests"
 fixtures="$awe/fixtures/app-contract"
+locale="$awe/apps/backend/public/locales/mobile/en.json"
 
-if [[ ! -d "$src" || ! -d "$fixtures" ]]; then
-  echo "error: $awe is not an awe checkout (no apps/tv/tvos/HopeTV or fixtures/app-contract)" >&2
+if [[ ! -d "$src" || ! -d "$fixtures" || ! -f "$locale" ]]; then
+  echo "error: $awe is not an awe checkout (no apps/tv/tvos/HopeTV, fixtures/app-contract or the mobile en.json)" >&2
   exit 1
 fi
 if [[ -n "$(git -C "$awe" status --porcelain -- apps/tv/tvos fixtures/app-contract)" ]]; then
@@ -109,6 +110,10 @@ fi
 rm -rf "$repo/fixtures/app-contract"
 mkdir -p "$repo/fixtures"
 cp -R "$fixtures" "$repo/fixtures/app-contract"
+
+# The English chrome strings. ChromeTextEnglishDriftTests compares them with this build's defaults.
+mkdir -p "$repo/fixtures/locales/mobile"
+cp "$locale" "$repo/fixtures/locales/mobile/en.json"
 
 cat > "$repo/UPSTREAM" <<EOF
 # The awe commit that ContractKit/ and fixtures/ were copied from. Written by scripts/sync-from-awe.sh.

@@ -1,35 +1,24 @@
 import SwiftUI
 
 /// `MovieCast` and `MovieCrew` (awe#7035): a heading, then one row of round person tiles, as the
-/// Apple TV "Cast & Crew" row.
-///
-/// Every tile is a focus stop, so Left and Right scroll the row and a row below the fold is
-/// reachable: a tvOS screen scrolls only on a focus move. Select does nothing, as on an information
-/// `ScheduleRow`, so a tile is `focusable`, not a `Button`. Focus draws on the circle (a lift and a
-/// `focusRing` ring), not on a rectangular platter.
+/// Apple TV "Cast & Crew" row. A press does nothing, as on an information `ScheduleRow`.
 struct PeopleRowView: View {
     let model: PeopleRowModel
 
     @Environment(\.appTheme) private var theme
-    @FocusState private var focusedTile: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             // The web block heading is an `h5`.
             Text(model.heading)
                 .font(BlockFont.heading(level: 5, theme: theme))
                 .foregroundStyle(theme.textPrimary)
 
-            // The same bleed as a shelf row: the row scrolls to the stage edges, and the vertical
-            // slack keeps a lifted circle inside the scroll view.
+            // The same bleed as a shelf row: the row scrolls to the screen edges.
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: PersonTileMetrics.spacing) {
                     ForEach(model.tiles) { tile in
-                        PersonTileView(tile: tile, focused: focusedTile == tile.id)
-                            .focusable()
-                            .focused($focusedTile, equals: tile.id)
-                            .focusEffectDisabled()
-                            .modifier(DefaultFocusRequest(enabled: tile.id == model.tiles.first?.id) { focusedTile = tile.id })
+                        PersonTileView(tile: tile)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel([tile.name, tile.role].compactMap { $0 }.joined(separator: ", "))
                             .accessibilityIdentifier("person-tile")
@@ -40,29 +29,27 @@ struct PeopleRowView: View {
             }
             .padding(.horizontal, -Layout.screenMargin)
         }
-        .focusSection()
     }
 }
 
-/// The sizes of a person tile. The photo is requested at twice the circle (`photoWidth`), for a
-/// 4K stage.
+/// The sizes of a person tile. ContractKit requests the photo at `photoWidth`, the tvOS size, which
+/// is also enough for this circle on a 3x screen.
 enum PersonTileMetrics {
-    static let circle: CGFloat = 180
-    static let width: CGFloat = 220
-    static let spacing: CGFloat = 32
-    static let photoWidth = Int(circle * 2)
+    static let circle: CGFloat = 84
+    static let width: CGFloat = 104
+    static let spacing: CGFloat = 12
+    static let photoWidth = 360
 }
 
 /// One tile: the round photo (the neutral circle when there is none, or while it loads), the
 /// name, then the role in the secondary color. Every tile has the same height.
 private struct PersonTileView: View {
     let tile: PeopleRowModel.Tile
-    let focused: Bool
 
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 6) {
             ZStack {
                 theme.surfaceSelected
                 if let url = tile.imageURL {
@@ -71,13 +58,6 @@ private struct PersonTileView: View {
             }
             .frame(width: PersonTileMetrics.circle, height: PersonTileMetrics.circle)
             .clipShape(Circle())
-            .overlay {
-                if focused {
-                    Circle().strokeBorder(theme.focusRing, lineWidth: 6)
-                }
-            }
-            .scaleEffect(focused ? 1.1 : 1)
-            .shadow(color: .black.opacity(focused ? 0.4 : 0), radius: 12, y: 6)
 
             // Every tile has one height: the name and the role each reserve two lines, and the role
             // slot draws with no role. A lazy row sizes from the tiles it built, so a taller tile
@@ -94,6 +74,5 @@ private struct PersonTileView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(width: PersonTileMetrics.width, alignment: .top)
-        .animation(.easeOut(duration: 0.15), value: focused)
     }
 }

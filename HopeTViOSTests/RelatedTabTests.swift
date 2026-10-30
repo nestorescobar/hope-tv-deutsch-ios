@@ -202,9 +202,9 @@ final class PlayerTabTests: XCTestCase {
         ChromeText.served.strings = [:]
         XCTAssertEqual(ChromeText.manifestKey(.relatedLabel), "tvRelatedLabel")
         XCTAssertEqual(ChromeText.string(.relatedLabel), "Related")
-        XCTAssertEqual(RelatedTab.controller(try related(), theme: AppTheme.fallback) { _ in }.title, "Related")
+        XCTAssertEqual(PlayerTab.related(try related()).title, "Related")
         ChromeText.served.strings = ["tvRelatedLabel": "Ähnliche"]
-        XCTAssertEqual(RelatedTab.controller(try related(), theme: AppTheme.fallback) { _ in }.title, "Ähnliche")
+        XCTAssertEqual(PlayerTab.related(try related()).title, "Ähnliche")
         ChromeText.served.strings = [:]
     }
 }

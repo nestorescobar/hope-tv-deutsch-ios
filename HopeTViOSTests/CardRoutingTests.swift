@@ -516,12 +516,9 @@ final class ScheduleRowRoutingTests: XCTestCase {
     /// Every row is one size, with or without an image (the slot holds a placeholder); the
     /// on-air row is clearly larger.
     func testEveryRowHasOneSizeAndTheOnAirRowIsLarger() {
-        let row = ScheduleRowMetrics.rowSize(isCurrent: false)
-        let current = ScheduleRowMetrics.rowSize(isCurrent: true)
-
-        XCTAssertGreaterThan(current.width, row.width * 1.5)
-        XCTAssertGreaterThan(current.height, row.height)
-        XCTAssertLessThan(current.width, 1632, "the on-air row fits between the margins")
+        XCTAssertGreaterThan(ScheduleRowMetrics.rowHeight(isCurrent: true), ScheduleRowMetrics.rowHeight(isCurrent: false))
+        XCTAssertGreaterThan(ScheduleRowMetrics.thumbnail(isCurrent: true).width,
+                             ScheduleRowMetrics.thumbnail(isCurrent: false).width)
     }
 
     // MARK: The on-air row plays the livestream (ruled 2026-09-28)

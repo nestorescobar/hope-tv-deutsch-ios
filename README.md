@@ -4,12 +4,14 @@ A native SwiftUI iPhone app for Hope TV Deutsch. It renders the CMS App `hope-tv
 from the AWE **App Contract**, the same JSON the Apple TV app reads. Editors decide the tabs,
 shelves and screens in the CMS; this app decides how they look on a phone.
 
-**Status:** plan and project setup only. The code is not seeded yet: start with
-[docs/PLAN.md](docs/PLAN.md), Phase 0.
+**Status:** Phase 1 and most of Phases 2 and 3 are in code. The app builds, passes `scripts/ci.sh`
+and runs on the simulator from the captured fixtures. A run against the production App needs a
+ClientToken: see [docs/PLAN.md](docs/PLAN.md), Phase 0. What the port changed is in
+[docs/PORTING.md](docs/PORTING.md), Section 7.
 
 ## Requirements
 
-- macOS with Xcode 16+ (iOS 18 SDK) and an iPhone simulator
+- macOS with Xcode 16+ (iOS 18 SDK) and an iPhone simulator (tested on Xcode 27.1, iOS 26.5)
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 - A checkout of [hope-media/awe](https://github.com/hope-media/awe), the source of the contract code
 - For a running app: a ClientToken of an enabled `kind: 'app'` Client row (tests do not need one)
@@ -32,6 +34,7 @@ open HopeTViOS.xcodeproj                      # after ci.sh or `xcodegen generat
 | `HopeTViOS/` | The iPhone UI: app, root view, block views, design system, player | This repo (seeded once from tvOS) |
 | `HopeTViOSTests/` | XCTest suite, incl. conformance over the shared fixtures | This repo (seeded once from tvOS) |
 | `fixtures/app-contract/` | Captured contract bodies shared with every AWE renderer | Only `scripts/sync-from-awe.sh` |
+| `fixtures/locales/` | The English chrome strings, for the drift test | Only `scripts/sync-from-awe.sh` |
 | `UPSTREAM` | The awe commit `ContractKit/` and `fixtures/` come from | Only `scripts/sync-from-awe.sh` |
 | `Config/Shells/<app>.xcconfig` | Per-App binding: API base, App slug, Entity id, language, bundle id | This repo |
 | `Config/Secrets/<app>.xcconfig` | The ClientToken, gitignored | Each developer |
@@ -54,7 +57,8 @@ Pick a shell: `APP=hope-tv scripts/ci.sh`, or for Xcode write `Config/Shell.xcco
 `scripts/ci.sh` is the gate. It runs on a Mac only:
 
 1. `xcodegen generate`
-2. unit tests on the newest available iPhone simulator (`SIMULATOR="iPhone 16"` picks another)
+2. unit tests on the newest available iPhone simulator (`SIMULATOR="iPhone 16"` picks another),
+   ad hoc signed, because the simulator's Keychain refuses an unsigned host
 3. a Release build for the simulator, unsigned
 
 Results go to `build/ci/` (logs and `tests.xcresult`). The tests are offline: they read

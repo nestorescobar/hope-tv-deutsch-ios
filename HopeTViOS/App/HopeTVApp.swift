@@ -1,7 +1,10 @@
+import AVFoundation
 import SwiftUI
 
 @main
 struct HopeTVApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     @State private var progress: WatchProgressStore
     @State private var store: ContractStore
     @State private var router: AppRouter
@@ -10,7 +13,10 @@ struct HopeTVApp: App {
     @State private var likes: Likes
 
     init() {
-        // AsyncImage goes through the shared URLCache. The tvOS default is small enough
+        // Sound plays with the ring switch off, on a locked screen and in Picture in Picture.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+
+        // AsyncImage goes through the shared URLCache. The default is small enough
         // that a grid of two dozen cards evicts its own artwork while it is still
         // scrolling, so give it room.
         URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024, diskCapacity: 256 * 1024 * 1024)
@@ -55,8 +61,8 @@ struct HopeTVApp: App {
             },
             sender: UmamiSender(),
             language: config.language,
-            // The stage in points ("1920x1080"), at 1080p and 4K alike.
-            screen: "\(Int(Layout.stageWidth))x\(Int(Layout.stageHeight))",
+            // The device in points ("393x852").
+            screen: Layout.screenName,
             userAgent: Umami.userAgent(osVersion: UIDevice.current.systemVersion,
                                        appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
         ))

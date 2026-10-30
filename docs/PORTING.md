@@ -113,3 +113,33 @@ The seeded `HopeTViOSTests` are the tvOS suite with `@testable import HopeTViOS`
   `customInfoViewControllers` tabs, `transportBarCustomMenuItems`). Delete a test only with its
   code, and say so in the commit message.
 - `HopeTVUITests` (remote focus) is not copied. Write XCUITests for touch later.
+
+## 7. What the port changed
+
+Seeded from awe `87ac4be893` (staging, 2026-10-30). This section records the choices that differ from
+the sections above, and why.
+
+- **`Layout.stageWidth` stays 1920.** ContractKit reads it for the hero art width and for `vw` and
+  `vh` units, so it is not the window size (Section 2). The phone size is `Layout.phoneWidth`, and
+  Umami `screen` is `Layout.screenName`. An authored `50vh` is 540 pt on a phone. Report such a
+  block; do not change ContractKit.
+- **Type sizes.** A seeded tvOS size goes through `Layout.text(_:)` (× 0.58). A size written for the
+  phone is a plain number. Do not put a phone number through `Layout.text`.
+- **Rows become columns.** A `Container` row that holds a detail block, a player, a schedule or a
+  shelf draws as a column (`EvaluatedNode.isWideBlock`). Authors place them side by side for 1920 pt.
+- **Text panels are gone.** `ReadingPanel`, `FocusCatcher` and `ReadingScroll` existed to scroll text
+  under focus. The screen's scroll view does that now.
+- **The schedule is a vertical list,** not a horizontal strip.
+- **Paging.** A grid or list card that appears asks for the next page. tvOS asked on focus.
+- **Search uses a `TextField`.** `.searchable` needs a navigation bar, and a tab root has none
+  (Section 5).
+- **The player is embedded, so it has no Done button.** Section 4 expected one. `PlayerView` draws
+  Close, Like and Quality itself: over the video in portrait, in a rail in landscape. In portrait,
+  `PlayerDetails` lists Go to show and the Episodes, Related or Schedule tabs under the video.
+- **Up Next is `UpNextCard`,** a SwiftUI card that `PlayerView` shows at `UpNext.offerTime`. The
+  viewer closes it for the rest of the item.
+- **Live stays a card** that opens the stream full screen, as tvOS ("nothing plays inline"). So
+  contract invariant 3 needs no change yet. The website's inline player is not built.
+- **A card sets `contentShape`.** Fallback art draws through `drawingGroup`, and without the shape
+  a poster card with fallback art took no touches.
+- **Not done:** Dynamic Type (Phase 4), an app icon, and the hero preview loop on a device.
